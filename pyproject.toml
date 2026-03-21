@@ -58,5 +58,5 @@ select = ["NPY201"]
 
 [tool.pytest]
 asyncio_mode = "auto"
-main_file = "app.py"
+main_file = "not_dot_net/app.py"
 addopts = ["-p", "nicegui.testing.user_plugin"]
