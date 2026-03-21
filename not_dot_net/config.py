@@ -9,6 +9,7 @@ from pydantic_settings import (
 
 class LDAPSettings(BaseModel):
     url: str = "ldap://localhost"
+    domain: str = "example.com"
     base_dn: str = "dc=example,dc=com"
     port: int = 389
 

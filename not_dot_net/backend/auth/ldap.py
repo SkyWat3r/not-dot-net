@@ -1,11 +1,13 @@
+from collections.abc import Callable
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from ldap3 import Server, Connection, ALL
-from ldap3.core.exceptions import LDAPBindError
+from ldap3.core.exceptions import LDAPBindError, LDAPException
 from pydantic import BaseModel
 
 from not_dot_net.backend.db import get_user_db
 from not_dot_net.backend.users import get_jwt_strategy
-from not_dot_net.config import get_settings
+from not_dot_net.config import get_settings, LDAPSettings
 
 router = APIRouter(tags=["auth"])
 
@@ -19,33 +21,66 @@ class TokenResponse(BaseModel):
     access_token: str
 
 
+def default_ldap_connect(ldap_cfg: LDAPSettings, username: str, password: str) -> Connection:
+    """Create and bind an AD connection using user@domain."""
+    server = Server(ldap_cfg.url, port=ldap_cfg.port, get_info=ALL)
+    bind_user = f"{username}@{ldap_cfg.domain}"
+    conn = Connection(server, user=bind_user, password=password, auto_bind=True)
+    return conn
+
+
+def ldap_authenticate(
+    username: str,
+    password: str,
+    ldap_cfg: LDAPSettings,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> str | None:
+    """Bind to AD, search for mail by sAMAccountName. Returns email or None."""
+    try:
+        conn = connect(ldap_cfg, username, password)
+    except LDAPBindError:
+        return None
+    except LDAPException:
+        return None
+
+    try:
+        conn.search(
+            ldap_cfg.base_dn,
+            f"(sAMAccountName={username})",
+            attributes=["mail"],
+        )
+        if not conn.entries:
+            return None
+        mail_attr = getattr(conn.entries[0], "mail", None)
+        return mail_attr.value if mail_attr is not None else None
+    finally:
+        conn.unbind()
+
+
+_ldap_connect: Callable[..., Connection] = default_ldap_connect
+
+
+def set_ldap_connect(fn: Callable[..., Connection]) -> None:
+    """Override the LDAP connection factory (for testing)."""
+    global _ldap_connect
+    _ldap_connect = fn
+
+
 @router.post("/auth/ldap", response_model=TokenResponse)
 async def ldap_login(
     credentials: LDAPAuthRequest,
     user_db=Depends(get_user_db),
 ):
     ldap_cfg = get_settings().backend.users.auth.ldap
-    server = Server(ldap_cfg.url, get_info=ALL)
+    email = ldap_authenticate(credentials.username, credentials.password, ldap_cfg, _ldap_connect)
 
-    try:
-        user_dn = f"uid={credentials.username},{ldap_cfg.base_dn}"
-        conn = Connection(server, user=user_dn, password=credentials.password, auto_bind=True)
-    except LDAPBindError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid LDAP credentials")
+    if email is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid LDAP credentials or user not found",
+        )
 
-    try:
-        conn.search(ldap_cfg.base_dn, f"(uid={credentials.username})", attributes=["mail"])
-        if not conn.entries:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="LDAP user not found")
-        email = getattr(conn.entries[0], "mail", None)
-        email_value = email.value if email is not None else None
-    finally:
-        conn.unbind()
-
-    if not email_value:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="LDAP did not return email")
-
-    user = await user_db.get_by_email(email_value)
+    user = await user_db.get_by_email(email)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
