@@ -35,3 +35,15 @@ def test_settings_has_teams_list():
     settings = Settings(jwt_secret="x" * 34, storage_secret="x" * 34)
     assert hasattr(settings, "teams")
     assert len(settings.teams) > 0
+
+
+ONBOARDING_FIELDS = [
+    "id", "created_by", "person_name", "person_email", "role_status",
+    "team", "start_date", "note", "status", "created_at", "updated_at",
+]
+
+
+@pytest.mark.parametrize("field", ONBOARDING_FIELDS)
+def test_onboarding_request_has_field(field: str):
+    from not_dot_net.backend.onboarding import OnboardingRequest
+    assert hasattr(OnboardingRequest, field)
