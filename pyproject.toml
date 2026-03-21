@@ -46,6 +46,9 @@ dependencies = [
 ]
 
 
+[project.scripts]
+not-dot-net = "not_dot_net.cli:app"
+
 [project.urls]
 homepage = "https://github.com/jeandet/not-dot-net"
 
