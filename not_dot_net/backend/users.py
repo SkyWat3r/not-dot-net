@@ -66,6 +66,35 @@ current_active_user = fastapi_users.current_user(active=True)
 current_active_user_optional = fastapi_users.current_user(active=True, optional=True)
 
 
+async def ensure_default_admin() -> None:
+    """Create default admin user if it doesn't exist yet."""
+    from not_dot_net.backend.db import get_async_session, get_user_db
+    from not_dot_net.backend.schemas import UserCreate
+    from fastapi_users.exceptions import UserAlreadyExists
+
+    settings = get_settings()
+
+    get_session_ctx = asynccontextmanager(get_async_session)
+    get_user_db_ctx = asynccontextmanager(get_user_db)
+    get_user_manager_ctx = asynccontextmanager(get_user_manager)
+
+    async with get_session_ctx() as session:
+        async with get_user_db_ctx(session) as user_db:
+            async with get_user_manager_ctx(user_db) as user_manager:
+                try:
+                    await user_manager.create(
+                        UserCreate(
+                            email=settings.admin_email,
+                            password=settings.admin_password,
+                            is_active=True,
+                            is_superuser=True,
+                        )
+                    )
+                    print(f"Default admin '{settings.admin_email}' created.")
+                except UserAlreadyExists:
+                    pass
+
+
 async def authenticate_and_get_token(email: str, password: str) -> str | None:
     """Authenticate a user and return a cookie token, or None on failure.
 
