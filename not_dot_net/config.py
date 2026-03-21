@@ -30,8 +30,8 @@ class BackendSettings(BaseModel):
 class Settings(BaseSettings):
     app_name: str = "LPP Intranet"
     admin_email: str = ""
-    jwt_secret: str
-    storage_secret: str
+    jwt_secret: str = "dev-only-change-in-production"
+    storage_secret: str = "dev-only-change-in-production"
     backend: BackendSettings = BackendSettings()
 
     model_config = SettingsConfigDict(yaml_file="config.yaml")
@@ -57,7 +57,10 @@ _settings: Settings | None = None
 
 def init_settings(config_file: str | None = None) -> Settings:
     global _settings
-    _settings = Settings(_yaml_file=config_file)
+    kwargs = {}
+    if config_file is not None:
+        kwargs["_yaml_file"] = config_file
+    _settings = Settings(**kwargs)
     return _settings
 
 
