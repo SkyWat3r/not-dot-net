@@ -1,0 +1,59 @@
+[build-system]
+build-backend = "flit_core.buildapi"
+requires = ["flit_core"]
+
+[project]
+name = 'not-dot-net'
+version = "0.1.0"
+description = "A simple Intranet for LPP."
+keywords = ["intranet", "plasma-physics", "cnrs", "lpp"]
+authors = [
+    { name = "Alexis Jeandet", email = "alexis.jeandet@member.fsf.org" }
+]
+
+maintainers = [
+    { name = "Alexis Jeandet", email = "alexis.jeandet@member.fsf.org" }
+]
+
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+readme = "README.md"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "nicegui>=3.4.0",
+    "cyclopts",
+    "pydantic-settings",
+    "sqlalchemy>=2.0.0",
+    "databases[sqlite]>=0.7.0",
+    "ldap3",
+    "pydantic",
+    "fastapi-users[sqlalchemy]",
+    "aiosqlite",
+    "passlib",
+]
+
+
+[project.urls]
+homepage = "https://github.com/jeandet/not-dot-net"
+
+
+[tool.ruff.lint]
+select = ["NPY201"]
+
+[tool.pytest]
+asyncio_mode = "auto"
+main_file = "app.py"
+addopts = ["-p", "nicegui.testing.user_plugin"]
