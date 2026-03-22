@@ -43,6 +43,7 @@ dependencies = [
     "fastapi-users[sqlalchemy]",
     "aiosqlite",
     "passlib",
+    "aiosmtplib",
 ]
 
 
