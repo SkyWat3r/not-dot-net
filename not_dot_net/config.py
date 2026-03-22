@@ -84,6 +84,8 @@ class Settings(BaseSettings):
         "Theory & Simulation",
         "Administration",
     ]
+    # "mail_config" alias avoids collision with MAIL env var (/var/spool/mail/...)
+    # YAML key is "mail_config:", not "mail:"
     mail: MailSettings = Field(default_factory=MailSettings, alias="mail_config")
     workflows: dict[str, WorkflowConfig] = {
         "vpn_access": WorkflowConfig(
