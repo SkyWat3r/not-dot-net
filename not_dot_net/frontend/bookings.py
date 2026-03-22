@@ -57,7 +57,7 @@ async def _render_bookings(container, user: User):
                 "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4"
             ):
                 for bk in my_bookings:
-                    res = await _get_resource_for_booking(bk.resource_id, resources)
+                    res = _get_resource_for_booking(bk.resource_id, resources)
                     res_name = res.name if res else "?"
                     with ui.card().classes("q-py-sm q-px-md"):
                         with ui.row().classes("items-center justify-between w-full"):
@@ -193,21 +193,21 @@ async def _render_resource_detail(outer_container, res, user, is_admin):
 
     # Book form
     ui.label(t("book")).classes("text-subtitle2 mt-3 mb-1")
-    with ui.row().classes("items-end gap-2 w-full"):
-        start_input = ui.input(
-            t("start_date"), value=str(today),
-        ).props("outlined dense")
-        end_input = ui.input(
-            t("end_date"), value=str(today + timedelta(days=1)),
-        ).props("outlined dense")
+    default_range = {"from": str(today), "to": str(today + timedelta(days=1))}
+    date_picker = ui.date(default_range).props("range")
+    with ui.row().classes("items-center gap-2"):
         note_input = ui.input(t("note")).props("outlined dense")
 
         async def do_book():
+            val = date_picker.value
+            if not val or not isinstance(val, dict):
+                ui.notify("Select a date range", color="negative")
+                return
             try:
-                s = date.fromisoformat(start_input.value)
-                e = date.fromisoformat(end_input.value)
-            except ValueError:
-                ui.notify("Invalid date format", color="negative")
+                s = date.fromisoformat(val["from"])
+                e = date.fromisoformat(val["to"]) + timedelta(days=1)
+            except (ValueError, KeyError):
+                ui.notify("Invalid date range", color="negative")
                 return
             try:
                 await create_booking(res.id, user.id, s, e, note=note_input.value)
