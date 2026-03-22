@@ -91,6 +91,7 @@ class Settings(BaseSettings):
         "Ubuntu": ["Python", "MATLAB", "IDL", "GCC", "LaTeX", "Docker"],
         "Fedora": ["Python", "MATLAB", "IDL", "GCC", "LaTeX", "Docker", "Toolbox"],
     }
+    allowed_origins: list[str] = []
     # "mail_config" alias avoids collision with MAIL env var (/var/spool/mail/...)
     # YAML key is "mail_config:", not "mail:"
     mail: MailSettings = Field(default_factory=MailSettings, alias="mail_config")

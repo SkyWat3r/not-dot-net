@@ -177,3 +177,8 @@ def test_completion_status_complete():
     status = get_completion_status(req, step, files={"doc": True})
     assert status["phone"] is True
     assert status["doc"] is True
+
+
+def test_compute_next_step_unknown_step_raises():
+    with pytest.raises(ValueError, match="Unknown step"):
+        compute_next_step(TWO_STEP_WORKFLOW, "nonexistent_step", "submit")

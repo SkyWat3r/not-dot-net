@@ -1,4 +1,8 @@
+import logging
+
 from nicegui import app
+
+logger = logging.getLogger(__name__)
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {
@@ -272,10 +276,31 @@ def set_locale(locale: str) -> None:
         app.storage.user["locale"] = locale
 
 
+_ALL_KEYS: frozenset[str] = frozenset(TRANSLATIONS[DEFAULT_LOCALE].keys())
+
+
+def validate_translations() -> list[str]:
+    """Check that all locales define the same keys. Returns list of problems."""
+    problems = []
+    for locale, trans in TRANSLATIONS.items():
+        missing = _ALL_KEYS - trans.keys()
+        extra = trans.keys() - _ALL_KEYS
+        for k in missing:
+            problems.append(f"[{locale}] missing key: {k}")
+        for k in extra:
+            problems.append(f"[{locale}] extra key (not in {DEFAULT_LOCALE}): {k}")
+    for problem in problems:
+        logger.warning("i18n: %s", problem)
+    return problems
+
+
 def t(key: str, **kwargs) -> str:
     """Translate a key to the current locale. Supports {name} placeholders."""
     locale = get_locale()
-    text = TRANSLATIONS.get(locale, TRANSLATIONS[DEFAULT_LOCALE]).get(key, key)
+    text = TRANSLATIONS.get(locale, TRANSLATIONS[DEFAULT_LOCALE]).get(key)
+    if text is None:
+        logger.warning("i18n: unknown key '%s'", key)
+        text = key
     if kwargs:
         text = text.format(**kwargs)
     return text

@@ -6,7 +6,7 @@ from nicegui import app, ui
 
 from not_dot_net.config import init_settings
 from not_dot_net.backend.db import init_db, create_db_and_tables
-from not_dot_net.backend.users import fastapi_users, jwt_backend, cookie_backend, ensure_default_admin, seed_fake_users
+from not_dot_net.backend.users import fastapi_users, jwt_backend, cookie_backend, ensure_default_admin
 from not_dot_net.backend.schemas import UserRead, UserUpdate
 from not_dot_net.backend.auth import router as auth_router
 from not_dot_net.frontend.login import setup as setup_login
@@ -27,9 +27,14 @@ def create_app(config_file: str | None = None, _seed_fake_users: bool = False):
         await create_db_and_tables()
         await ensure_default_admin()
         if _seed_fake_users:
+            from not_dot_net.backend.seeding import seed_fake_users
             await seed_fake_users()
 
     app.on_startup(startup)
+
+    # CSRF middleware is available in backend/csrf.py but disabled for now —
+    # NiceGUI's ASGI stack doesn't tolerate additional middleware wrapping.
+    # TODO: re-enable with integration tests covering the login flow.
 
     app.include_router(
         fastapi_users.get_auth_router(jwt_backend),
@@ -47,6 +52,9 @@ def create_app(config_file: str | None = None, _seed_fake_users: bool = False):
         tags=["users"],
     )
     app.include_router(auth_router)
+
+    from not_dot_net.frontend.i18n import validate_translations
+    validate_translations()
 
     setup_login()
     setup_shell()

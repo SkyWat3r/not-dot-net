@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import date
 from enum import Enum as PyEnum
 
@@ -64,6 +65,15 @@ async def create_db_and_tables() -> None:
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
+    if _async_session_maker is None:
+        raise RuntimeError("DB not initialized — call init_db() first")
+    async with _async_session_maker() as session:
+        yield session
+
+
+@asynccontextmanager
+async def session_scope() -> AsyncGenerator[AsyncSession, None]:
+    """Context manager for use outside FastAPI DI (services, CLI, etc.)."""
     if _async_session_maker is None:
         raise RuntimeError("DB not initialized — call init_db() first")
     async with _async_session_maker() as session:

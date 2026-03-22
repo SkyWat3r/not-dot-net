@@ -1,18 +1,17 @@
 """Workflow service layer — DB operations that use the step machine engine."""
 
 import uuid
-from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, or_, and_
 
-from not_dot_net.backend.db import get_async_session
+from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.roles import Role, has_role
 from not_dot_net.backend.workflow_engine import (
     compute_next_step,
     get_current_step_config,
 )
-from not_dot_net.backend.workflow_models import WorkflowEvent, WorkflowRequest
+from not_dot_net.backend.workflow_models import RequestStatus, WorkflowEvent, WorkflowRequest
 from not_dot_net.backend.notifications import notify
 from not_dot_net.config import get_settings
 
@@ -20,22 +19,19 @@ from not_dot_net.config import get_settings
 async def _fire_notifications(req, event: str, step_key: str, wf):
     """Fire notifications for a workflow event. Best-effort.
 
-    Note: each lookup opens a fresh session (N+1). Acceptable at current scale.
+    Uses a single session for all user lookups to avoid N+1 queries.
     """
-    from not_dot_net.backend.db import get_async_session, User
+    from not_dot_net.backend.db import User
     from not_dot_net.backend.roles import Role as RoleEnum
 
     settings = get_settings()
 
-    async def get_user_email(user_id):
-        get_session = asynccontextmanager(get_async_session)
-        async with get_session() as session:
+    async with session_scope() as session:
+        async def get_user_email(user_id):
             user = await session.get(User, user_id)
             return user.email if user else None
 
-    async def get_users_by_role(role_str):
-        get_session = asynccontextmanager(get_async_session)
-        async with get_session() as session:
+        async def get_users_by_role(role_str):
             result = await session.execute(
                 select(User).where(
                     User.role == RoleEnum(role_str),
@@ -44,15 +40,15 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
             )
             return list(result.scalars().all())
 
-    await notify(
-        request=req,
-        event=event,
-        step_key=step_key,
-        workflow=wf,
-        mail_settings=settings.mail,
-        get_user_email=get_user_email,
-        get_users_by_role=get_users_by_role,
-    )
+        await notify(
+            request=req,
+            event=event,
+            step_key=step_key,
+            workflow=wf,
+            mail_settings=settings.mail,
+            get_user_email=get_user_email,
+            get_users_by_role=get_users_by_role,
+        )
 
 
 def _get_workflow_config(workflow_type: str):
@@ -76,12 +72,11 @@ async def create_request(
     if wf.target_email_field:
         target_email = data.get(wf.target_email_field)
 
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         req = WorkflowRequest(
             type=workflow_type,
             current_step=first_step,
-            status="in_progress",
+            status=RequestStatus.IN_PROGRESS,
             data=data,
             created_by=created_by,
             target_email=target_email,
@@ -118,8 +113,7 @@ async def submit_step(
     actor_user=None,
 ) -> WorkflowRequest:
     """Submit an action on the current step. Pass actor_user for authorization check."""
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         req = await session.get(WorkflowRequest, request_id)
         if req is None:
             raise ValueError(f"Request {request_id} not found")
@@ -162,7 +156,7 @@ async def submit_step(
             req.token_expires_at = None
 
         # Generate token if next step is for target_person
-        if next_step and new_status == "in_progress":
+        if next_step and new_status == RequestStatus.IN_PROGRESS:
             next_step_config = None
             for s in wf.steps:
                 if s.key == next_step:
@@ -201,8 +195,7 @@ async def save_draft(
     actor_user=None,
 ) -> WorkflowRequest:
     """Save partial data on a form step with partial_save enabled."""
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         req = await session.get(WorkflowRequest, request_id)
         if req is None:
             raise ValueError(f"Request {request_id} not found")
@@ -234,18 +227,16 @@ async def save_draft(
 
 
 async def get_request_by_id(request_id: uuid.UUID) -> WorkflowRequest | None:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         return await session.get(WorkflowRequest, request_id)
 
 
 async def get_request_by_token(token: str) -> WorkflowRequest | None:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(WorkflowRequest).where(
                 WorkflowRequest.token == token,
-                WorkflowRequest.status == "in_progress",
+                WorkflowRequest.status == RequestStatus.IN_PROGRESS,
                 WorkflowRequest.token_expires_at > datetime.now(timezone.utc),
             )
         )
@@ -253,8 +244,7 @@ async def get_request_by_token(token: str) -> WorkflowRequest | None:
 
 
 async def list_user_requests(user_id: uuid.UUID) -> list[WorkflowRequest]:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(WorkflowRequest)
             .where(WorkflowRequest.created_by == user_id)
@@ -264,43 +254,40 @@ async def list_user_requests(user_id: uuid.UUID) -> list[WorkflowRequest]:
 
 
 async def list_actionable(user) -> list[WorkflowRequest]:
-    """List requests where this user can act on the current step."""
+    """List requests where this user can act on the current step.
+
+    Builds SQL OR-conditions from workflow config so filtering happens in the
+    database instead of loading all active requests into Python.
+    """
     settings = get_settings()
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    filters = []
+    for wf_type, wf in settings.workflows.items():
+        for step in wf.steps:
+            step_match = and_(
+                WorkflowRequest.type == wf_type,
+                WorkflowRequest.current_step == step.key,
+            )
+            if step.assignee_role and has_role(user, Role(step.assignee_role)):
+                filters.append(step_match)
+            elif step.assignee == "target_person":
+                filters.append(and_(step_match, WorkflowRequest.target_email == user.email))
+            elif step.assignee == "requester":
+                filters.append(and_(step_match, WorkflowRequest.created_by == user.id))
+
+    if not filters:
+        return []
+
+    async with session_scope() as session:
         result = await session.execute(
             select(WorkflowRequest)
-            .where(WorkflowRequest.status == "in_progress")
+            .where(WorkflowRequest.status == RequestStatus.IN_PROGRESS, or_(*filters))
             .order_by(WorkflowRequest.created_at.desc())
         )
-        all_active = result.scalars().all()
-
-    actionable = []
-    for req in all_active:
-        wf = settings.workflows.get(req.type)
-        if wf is None:
-            continue
-        step = get_current_step_config(req, wf)
-        if step is None:
-            continue
-
-        # Check role-based assignment
-        if step.assignee_role and has_role(user, Role(step.assignee_role)):
-            actionable.append(req)
-            continue
-        # Check contextual assignment
-        if step.assignee == "target_person" and user.email == req.target_email:
-            actionable.append(req)
-            continue
-        if step.assignee == "requester" and str(user.id) == str(req.created_by):
-            actionable.append(req)
-
-    return actionable
+        return list(result.scalars().all())
 
 
 async def list_events(request_id: uuid.UUID) -> list[WorkflowEvent]:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(WorkflowEvent)
             .where(WorkflowEvent.request_id == request_id)
@@ -309,10 +296,27 @@ async def list_events(request_id: uuid.UUID) -> list[WorkflowEvent]:
         return list(result.scalars().all())
 
 
+async def list_events_batch(
+    request_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, list[WorkflowEvent]]:
+    """Fetch events for multiple requests in one query."""
+    if not request_ids:
+        return {}
+    async with session_scope() as session:
+        result = await session.execute(
+            select(WorkflowEvent)
+            .where(WorkflowEvent.request_id.in_(request_ids))
+            .order_by(WorkflowEvent.request_id, WorkflowEvent.created_at.asc())
+        )
+        events_by_req: dict[uuid.UUID, list[WorkflowEvent]] = {rid: [] for rid in request_ids}
+        for ev in result.scalars().all():
+            events_by_req.setdefault(ev.request_id, []).append(ev)
+        return events_by_req
+
+
 async def list_all_requests() -> list[WorkflowRequest]:
     """Admin-only: list all requests."""
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(WorkflowRequest)
             .order_by(WorkflowRequest.created_at.desc())

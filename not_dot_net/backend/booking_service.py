@@ -1,13 +1,12 @@
 """Booking service — resource CRUD and reservation management."""
 
 import uuid
-from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 
 from not_dot_net.backend.booking_models import Booking, Resource
-from not_dot_net.backend.db import get_async_session
+from not_dot_net.backend.db import session_scope
 
 MAX_BOOKING_DAYS = 183  # ~6 months
 
@@ -24,8 +23,7 @@ class BookingValidationError(Exception):
 
 
 async def list_resources(active_only: bool = True) -> list[Resource]:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         query = select(Resource).order_by(Resource.name)
         if active_only:
             query = query.where(Resource.active == True)  # noqa: E712
@@ -35,8 +33,7 @@ async def list_resources(active_only: bool = True) -> list[Resource]:
 
 async def create_resource(name: str, resource_type: str, description: str = "",
                           location: str = "", specs: dict | None = None) -> Resource:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         resource = Resource(
             name=name,
             resource_type=resource_type,
@@ -58,8 +55,7 @@ async def create_resource(name: str, resource_type: str, description: str = "",
 
 
 async def update_resource(resource_id: uuid.UUID, **kwargs) -> Resource:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         resource = await session.get(Resource, resource_id)
         if resource is None:
             raise ValueError(f"Resource {resource_id} not found")
@@ -72,8 +68,7 @@ async def update_resource(resource_id: uuid.UUID, **kwargs) -> Resource:
 
 
 async def delete_resource(resource_id: uuid.UUID) -> None:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         resource = await session.get(Resource, resource_id)
         if resource is None:
             raise ValueError(f"Resource {resource_id} not found")
@@ -87,8 +82,7 @@ async def delete_resource(resource_id: uuid.UUID) -> None:
 async def list_bookings_for_resource(
     resource_id: uuid.UUID, from_date: date | None = None, to_date: date | None = None,
 ) -> list[Booking]:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         query = (
             select(Booking)
             .where(Booking.resource_id == resource_id)
@@ -103,8 +97,7 @@ async def list_bookings_for_resource(
 
 
 async def list_bookings_for_user(user_id: uuid.UUID) -> list[Booking]:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(Booking)
             .where(Booking.user_id == user_id, Booking.end_date >= date.today())
@@ -125,30 +118,30 @@ async def create_booking(
     if (end_date - start_date).days > MAX_BOOKING_DAYS:
         raise BookingValidationError(f"Booking cannot exceed {MAX_BOOKING_DAYS} days")
 
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
-        # Check for overlapping bookings
-        conflicts = await session.execute(
-            select(Booking).where(
-                Booking.resource_id == resource_id,
-                Booking.start_date < end_date,
-                Booking.end_date > start_date,
+    async with session_scope() as session:
+        async with session.begin():
+            # Lock overlapping rows to prevent concurrent double-booking.
+            # with_for_update() is a no-op on SQLite but correct for PostgreSQL.
+            conflicts = await session.execute(
+                select(Booking).where(
+                    Booking.resource_id == resource_id,
+                    Booking.start_date < end_date,
+                    Booking.end_date > start_date,
+                ).with_for_update()
             )
-        )
-        if conflicts.scalars().first():
-            raise BookingConflictError("This resource is already booked for the selected period")
+            if conflicts.scalars().first():
+                raise BookingConflictError("This resource is already booked for the selected period")
 
-        booking = Booking(
-            resource_id=resource_id,
-            user_id=user_id,
-            start_date=start_date,
-            end_date=end_date,
-            os_choice=os_choice,
-            software_tags=software_tags or None,
-            note=note or None,
-        )
-        session.add(booking)
-        await session.commit()
+            booking = Booking(
+                resource_id=resource_id,
+                user_id=user_id,
+                start_date=start_date,
+                end_date=end_date,
+                os_choice=os_choice,
+                software_tags=software_tags or None,
+                note=note or None,
+            )
+            session.add(booking)
         await session.refresh(booking)
 
     from not_dot_net.backend.audit import log_audit
@@ -162,8 +155,7 @@ async def create_booking(
 
 
 async def cancel_booking(booking_id: uuid.UUID, user_id: uuid.UUID, is_admin: bool = False) -> None:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         booking = await session.get(Booking, booking_id)
         if booking is None:
             raise ValueError("Booking not found")
@@ -183,6 +175,5 @@ async def cancel_booking(booking_id: uuid.UUID, user_id: uuid.UUID, is_admin: bo
 
 
 async def get_resource_by_id(resource_id: uuid.UUID) -> Resource | None:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         return await session.get(Resource, resource_id)

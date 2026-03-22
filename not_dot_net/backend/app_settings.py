@@ -1,11 +1,9 @@
 """Runtime-editable app settings stored in DB, with config file defaults."""
 
-from contextlib import asynccontextmanager
-
 from sqlalchemy import JSON, String, select
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
-from not_dot_net.backend.db import Base, get_async_session
+from not_dot_net.backend.db import Base, session_scope
 from not_dot_net.config import get_settings
 
 
@@ -17,15 +15,13 @@ class AppSetting(MappedAsDataclass, Base, kw_only=True):
 
 
 async def _get(key: str):
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         row = await session.get(AppSetting, key)
         return row.value if row else None
 
 
 async def _set(key: str, value):
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         row = await session.get(AppSetting, key)
         if row:
             row.value = value

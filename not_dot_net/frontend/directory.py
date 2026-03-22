@@ -2,29 +2,25 @@ from contextlib import asynccontextmanager
 from datetime import date
 
 from nicegui import ui
+from sqlalchemy import select
 
-from not_dot_net.backend.db import User, get_async_session, get_user_db
+from not_dot_net.backend.db import User, session_scope, get_user_db
 from not_dot_net.backend.schemas import UserUpdate
 from not_dot_net.backend.users import get_user_manager
 from not_dot_net.frontend.i18n import t
-from sqlalchemy import select
 
 
 async def _load_people() -> list[User]:
-    get_session_ctx = asynccontextmanager(get_async_session)
-    async with get_session_ctx() as session:
+    async with session_scope() as session:
         result = await session.execute(select(User).where(User.is_active == True))  # noqa: E712
         return result.scalars().all()
 
 
 async def _update_user(user_id, updates: dict):
     """Update a user via UserManager (respects FastAPI-Users hooks)."""
-    get_session_ctx = asynccontextmanager(get_async_session)
-    get_user_db_ctx = asynccontextmanager(get_user_db)
-    get_user_manager_ctx = asynccontextmanager(get_user_manager)
-    async with get_session_ctx() as session:
-        async with get_user_db_ctx(session) as user_db:
-            async with get_user_manager_ctx(user_db) as manager:
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as manager:
                 user = await manager.get(user_id)
                 update_schema = UserUpdate(**updates)
                 await manager.update(update_schema, user)
@@ -32,12 +28,9 @@ async def _update_user(user_id, updates: dict):
 
 async def _delete_user(user_id):
     """Delete a user via UserManager (respects FastAPI-Users hooks)."""
-    get_session_ctx = asynccontextmanager(get_async_session)
-    get_user_db_ctx = asynccontextmanager(get_user_db)
-    get_user_manager_ctx = asynccontextmanager(get_user_manager)
-    async with get_session_ctx() as session:
-        async with get_user_db_ctx(session) as user_db:
-            async with get_user_manager_ctx(user_db) as manager:
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as manager:
                 user = await manager.get(user_id)
                 await manager.delete(user)
 

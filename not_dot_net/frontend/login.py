@@ -1,4 +1,5 @@
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi.responses import RedirectResponse
 from nicegui import app, ui
@@ -7,11 +8,21 @@ from not_dot_net.backend.users import authenticate_and_get_token
 from not_dot_net.frontend.i18n import t
 
 
+def _safe_redirect(redirect_to: str) -> str:
+    """Reject absolute URLs and anything that isn't a plain local path."""
+    parsed = urlparse(redirect_to)
+    if parsed.scheme or parsed.netloc:
+        return "/"
+    return redirect_to
+
+
 def setup():
     @ui.page("/login")
     def login(redirect_to: str = "/") -> Optional[RedirectResponse]:
+        safe_dest = _safe_redirect(redirect_to)
+
         if app.storage.user.get("authenticated", False):
-            return RedirectResponse(redirect_to)
+            return RedirectResponse(safe_dest)
 
         async def try_login() -> None:
             try:
@@ -20,9 +31,11 @@ def setup():
                     ui.notify(t("invalid_credentials"), color="negative")
                     return
 
+                app.storage.user["authenticated"] = True
+                js_dest = safe_dest.replace("\\", "\\\\").replace("'", "\\'")
                 ui.run_javascript(
-                    f'document.cookie = "fastapiusersauth={token}; path=/; SameSite=Lax";'
-                    f'window.location.href = "{redirect_to}";'
+                    f"document.cookie = 'fastapiusersauth={token}; path=/; SameSite=Lax';"
+                    f"window.location.href = '{js_dest}';"
                 )
             except Exception:
                 ui.notify(t("auth_error"), color="negative")
@@ -33,12 +46,12 @@ def setup():
                 "color: #0F52AC"
             )
             with ui.card().classes("w-80"):
-                email = ui.input(t("email")).props("outlined dense").classes(
+                email = ui.input(t("email")).props('outlined dense').classes(
                     "w-full"
                 ).on("keydown.enter", try_login)
                 password = ui.input(
                     t("password"), password=True, password_toggle_button=True
-                ).props("outlined dense").classes("w-full").on(
+                ).props('outlined dense').classes("w-full").on(
                     "keydown.enter", try_login
                 )
                 ui.button(t("log_in"), on_click=try_login).props(

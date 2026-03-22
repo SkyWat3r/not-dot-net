@@ -116,7 +116,15 @@ def _generate_people(n: int = 100, rng: random.Random | None = None) -> list[dic
     return people
 
 
-FAKE_USERS = _generate_people(100)
+_FAKE_USERS_CACHE: list[dict] | None = None
+
+
+def get_fake_users() -> list[dict]:
+    """Lazily generate fake users (only on first call, not at import time)."""
+    global _FAKE_USERS_CACHE
+    if _FAKE_USERS_CACHE is None:
+        _FAKE_USERS_CACHE = _generate_people(100)
+    return _FAKE_USERS_CACHE
 
 
 # --- Workflow seed data ---

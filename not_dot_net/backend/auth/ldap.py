@@ -3,9 +3,11 @@ from collections.abc import Callable
 from fastapi import APIRouter, Depends, HTTPException, status
 from ldap3 import Server, Connection, ALL
 from ldap3.core.exceptions import LDAPBindError, LDAPException
+from ldap3.utils.conv import escape_filter_chars
 from pydantic import BaseModel
 
 from not_dot_net.backend.db import get_user_db
+from not_dot_net.backend.schemas import TokenResponse
 from not_dot_net.backend.users import get_jwt_strategy
 from not_dot_net.config import get_settings, LDAPSettings
 
@@ -15,10 +17,6 @@ router = APIRouter(tags=["auth"])
 class LDAPAuthRequest(BaseModel):
     username: str
     password: str
-
-
-class TokenResponse(BaseModel):
-    access_token: str
 
 
 def default_ldap_connect(ldap_cfg: LDAPSettings, username: str, password: str) -> Connection:
@@ -44,9 +42,10 @@ def ldap_authenticate(
         return None
 
     try:
+        safe_username = escape_filter_chars(username)
         conn.search(
             ldap_cfg.base_dn,
-            f"(sAMAccountName={username})",
+            f"(sAMAccountName={safe_username})",
             attributes=["mail"],
         )
         if not conn.entries:

@@ -2,8 +2,13 @@ import uuid
 from datetime import date
 
 from fastapi_users import schemas
+from pydantic import BaseModel
 
 from not_dot_net.backend.roles import Role
+
+
+class TokenResponse(BaseModel):
+    access_token: str
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):

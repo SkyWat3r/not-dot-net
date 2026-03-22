@@ -8,7 +8,7 @@ from not_dot_net.backend.workflow_service import (
     list_user_requests,
     list_all_requests,
     list_actionable,
-    list_events,
+    list_events_batch,
     submit_step,
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config, get_step_progress
@@ -84,6 +84,8 @@ async def _render_my_requests(container, user: User):
             {"name": "status", "label": t("status"), "field": "status", "sortable": True, "align": "center"},
         ]
 
+        events_by_req = await list_events_batch([req.id for req in requests])
+
         rows = []
         for req in requests:
             wf = settings.workflows.get(req.type)
@@ -91,14 +93,13 @@ async def _render_my_requests(container, user: User):
             step_label = step_config.key if step_config else req.current_step
             current, total = get_step_progress(req, wf) if wf else (0, 0)
 
-            events = await list_events(req.id)
             event_rows = [
                 {
                     "ts": ev.created_at.strftime("%Y-%m-%d %H:%M") if ev.created_at else "",
                     "label": f"{ev.step_key}: {ev.action}",
                     "comment": ev.comment or "",
                 }
-                for ev in events
+                for ev in events_by_req.get(req.id, [])
             ]
 
             rows.append({

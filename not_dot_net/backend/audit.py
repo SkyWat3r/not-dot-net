@@ -2,13 +2,12 @@
 
 import logging
 import uuid
-from contextlib import asynccontextmanager
 from datetime import datetime
 
 from sqlalchemy import JSON, String, Text, func, select
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
-from not_dot_net.backend.db import Base, get_async_session
+from not_dot_net.backend.db import Base, session_scope
 
 logger = logging.getLogger("not_dot_net.audit")
 
@@ -52,8 +51,7 @@ async def log_audit(
     logger.info(log_msg)
 
     try:
-        get_session = asynccontextmanager(get_async_session)
-        async with get_session() as session:
+        async with session_scope() as session:
             event = AuditEvent(
                 category=category,
                 action=action,
@@ -77,8 +75,7 @@ async def list_audit_events(
     limit: int = 100,
     offset: int = 0,
 ) -> list[AuditEvent]:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         query = select(AuditEvent).order_by(AuditEvent.created_at.desc())
         if category:
             query = query.where(AuditEvent.category == category)
@@ -134,8 +131,13 @@ async def _resolve_names(session, events: list[AuditEvent]) -> None:
     for ev in events:
         if ev.actor_id and not ev.actor_email and ev.actor_id in user_names:
             ev.actor_email = user_names[ev.actor_id]
+        # Store resolved display name separately to avoid corrupting the real ID
         if ev.target_id:
             if ev.target_type == "user" and ev.target_id in user_names:
-                ev.target_id = user_names[ev.target_id]
+                ev._target_display = user_names[ev.target_id]
             elif ev.target_type == "resource" and ev.target_id in resource_names:
-                ev.target_id = resource_names[ev.target_id]
+                ev._target_display = resource_names[ev.target_id]
+            else:
+                ev._target_display = ev.target_id
+        else:
+            ev._target_display = None

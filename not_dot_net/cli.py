@@ -1,6 +1,6 @@
 import asyncio
-from typing import Optional
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from cyclopts import App
 from yaml import safe_dump
@@ -27,7 +27,7 @@ def create_user(username: str, password: str, env_file: Optional[str] = None):
 
     async def _create():
         from not_dot_net.config import init_settings
-        from not_dot_net.backend.db import init_db, create_db_and_tables, get_async_session, get_user_db
+        from not_dot_net.backend.db import init_db, create_db_and_tables, session_scope, get_user_db
         from not_dot_net.backend.users import get_user_manager
         from not_dot_net.backend.schemas import UserCreate
 
@@ -35,7 +35,7 @@ def create_user(username: str, password: str, env_file: Optional[str] = None):
         init_db(settings.backend.database_url)
         await create_db_and_tables()
 
-        async with asynccontextmanager(get_async_session)() as session:
+        async with session_scope() as session:
             async with asynccontextmanager(get_user_db)(session) as user_db:
                 async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
                     user = await user_manager.create(

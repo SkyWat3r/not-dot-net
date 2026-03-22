@@ -1,0 +1,92 @@
+"""Integration tests for local auth endpoints (register + login)."""
+
+import pytest
+import uuid
+from contextlib import asynccontextmanager
+
+from not_dot_net.backend.db import Base, User, session_scope, get_user_db
+from not_dot_net.backend.users import get_user_manager
+from not_dot_net.backend.schemas import UserCreate
+from not_dot_net.backend.roles import Role
+from not_dot_net.config import init_settings
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+import not_dot_net.backend.db as db_module
+import not_dot_net.backend.audit  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+async def setup_db():
+    init_settings()
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+    old_engine, old_session = db_module._engine, db_module._async_session_maker
+    db_module._engine = engine
+    db_module._async_session_maker = session_maker
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    await engine.dispose()
+    db_module._engine, db_module._async_session_maker = old_engine, old_session
+
+
+async def _create_user_via_manager(email="test@test.com", password="Secret123!"):
+    """Create a user through the UserManager (same path as the register endpoint)."""
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as manager:
+                return await manager.create(UserCreate(email=email, password=password))
+
+
+async def _authenticate_via_manager(email, password):
+    """Authenticate a user through the UserManager (same path as the login endpoint)."""
+    from fastapi.security import OAuth2PasswordRequestForm
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as manager:
+                form = OAuth2PasswordRequestForm(
+                    username=email, password=password,
+                    scope="", grant_type="password",
+                )
+                return await manager.authenticate(form)
+
+
+async def test_register_creates_user():
+    user = await _create_user_via_manager("new@test.com", "Password1!")
+    assert user is not None
+    assert user.email == "new@test.com"
+    assert user.is_active is True
+
+
+async def test_register_duplicate_raises():
+    from fastapi_users.exceptions import UserAlreadyExists
+    await _create_user_via_manager("dup@test.com", "Password1!")
+    with pytest.raises(UserAlreadyExists):
+        await _create_user_via_manager("dup@test.com", "Password1!")
+
+
+async def test_authenticate_valid_credentials():
+    await _create_user_via_manager("auth@test.com", "CorrectPassword1!")
+    user = await _authenticate_via_manager("auth@test.com", "CorrectPassword1!")
+    assert user is not None
+    assert user.email == "auth@test.com"
+
+
+async def test_authenticate_wrong_password():
+    await _create_user_via_manager("auth2@test.com", "CorrectPassword1!")
+    user = await _authenticate_via_manager("auth2@test.com", "WrongPassword!")
+    assert user is None
+
+
+async def test_authenticate_nonexistent_user():
+    user = await _authenticate_via_manager("nobody@test.com", "Whatever1!")
+    assert user is None
+
+
+async def test_jwt_token_generation():
+    from not_dot_net.backend.users import get_jwt_strategy
+    user = await _create_user_via_manager("jwt@test.com", "Password1!")
+    strategy = get_jwt_strategy()
+    token = await strategy.write_token(user)
+    assert isinstance(token, str)
+    assert len(token) > 20

@@ -23,13 +23,10 @@ from not_dot_net.backend.app_settings import (
     set_os_choices,
     set_software_tags,
 )
-from not_dot_net.backend.db import User, get_async_session
+from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.roles import Role, has_role
 from not_dot_net.config import get_settings
 from not_dot_net.frontend.i18n import t
-
-from contextlib import asynccontextmanager
-from sqlalchemy import select
 
 RESOURCE_TYPES = ["desktop", "laptop"]
 
@@ -44,8 +41,7 @@ def render(user: User):
 
 
 async def _get_user_name(user_id: uuid.UUID) -> str:
-    get_session = asynccontextmanager(get_async_session)
-    async with get_session() as session:
+    async with session_scope() as session:
         u = await session.get(User, user_id)
         return u.full_name or u.email if u else "?"
 

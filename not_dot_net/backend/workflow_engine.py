@@ -1,6 +1,7 @@
 """Pure-function workflow step machine. No DB, no side effects."""
 
 from not_dot_net.backend.roles import Role, has_role
+from not_dot_net.backend.workflow_models import RequestStatus
 from not_dot_net.config import WorkflowConfig, WorkflowStepConfig
 
 
@@ -18,9 +19,9 @@ def get_step_progress(request, workflow: WorkflowConfig) -> tuple[int, int]:
     Terminal statuses (completed/rejected) return (total, total) or (0, total).
     """
     total = len(workflow.steps)
-    if request.status == "completed":
+    if request.status == RequestStatus.COMPLETED:
         return (total, total)
-    if request.status == "rejected":
+    if request.status == RequestStatus.REJECTED:
         step_keys = [s.key for s in workflow.steps]
         idx = step_keys.index(request.current_step) if request.current_step in step_keys else 0
         return (idx + 1, total)
@@ -32,7 +33,7 @@ def get_step_progress(request, workflow: WorkflowConfig) -> tuple[int, int]:
 
 def get_available_actions(request, workflow: WorkflowConfig) -> list[str]:
     """Get actions available for the current step. Empty if request is terminal."""
-    if request.status in ("completed", "rejected", "cancelled"):
+    if request.status in (RequestStatus.COMPLETED, RequestStatus.REJECTED, RequestStatus.CANCELLED):
         return []
     step = get_current_step_config(request, workflow)
     if step is None:
@@ -52,17 +53,19 @@ def compute_next_step(
     Returns (None, "rejected") if rejected.
     """
     if action == "reject":
-        return (None, "rejected")
+        return (None, RequestStatus.REJECTED)
 
     if action == "save_draft":
-        return (current_step_key, "in_progress")
+        return (current_step_key, RequestStatus.IN_PROGRESS)
 
     # submit or approve → advance to next step
     step_keys = [s.key for s in workflow.steps]
+    if current_step_key not in step_keys:
+        raise ValueError(f"Unknown step '{current_step_key}' in workflow")
     idx = step_keys.index(current_step_key)
     if idx + 1 < len(step_keys):
-        return (step_keys[idx + 1], "in_progress")
-    return (None, "completed")
+        return (step_keys[idx + 1], RequestStatus.IN_PROGRESS)
+    return (None, RequestStatus.COMPLETED)
 
 
 def can_user_act(user, request, workflow: WorkflowConfig) -> bool:
@@ -80,9 +83,6 @@ def can_user_act(user, request, workflow: WorkflowConfig) -> bool:
         return user.email == request.target_email
     if step.assignee == "requester":
         return str(user.id) == str(request.created_by)
-
-    # NOTE: `assignee: step:<key>:actor` is deferred to Plan 2/3 when event
-    # history queries are wired up. Not needed for onboarding or VPN workflows.
 
     return False
 

@@ -69,7 +69,7 @@ async def _render_log(container, category=None, actor_email=None):
                 "category": ev.category,
                 "action": ev.action,
                 "actor": ev.actor_email or ev.actor_id or "—",
-                "target": f"{ev.target_type}: {ev.target_id}" if ev.target_type and ev.target_id else "—",
+                "target": f"{ev.target_type}: {getattr(ev, '_target_display', ev.target_id)}" if ev.target_type and ev.target_id else "—",
                 "detail": ev.detail or "",
             }
             for ev in events

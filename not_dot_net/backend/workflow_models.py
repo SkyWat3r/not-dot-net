@@ -1,10 +1,18 @@
 import uuid
 from datetime import datetime
+from enum import Enum as PyEnum
 
 from sqlalchemy import JSON, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
 from not_dot_net.backend.db import Base
+
+
+class RequestStatus(str, PyEnum):
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
 
 
 class WorkflowRequest(MappedAsDataclass, Base, kw_only=True):
@@ -13,7 +21,7 @@ class WorkflowRequest(MappedAsDataclass, Base, kw_only=True):
     type: Mapped[str] = mapped_column(String(100))
     current_step: Mapped[str] = mapped_column(String(100))
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
-    status: Mapped[str] = mapped_column(String(50), default="in_progress")
+    status: Mapped[str] = mapped_column(String(50), default="in_progress", index=True)
     data: Mapped[dict] = mapped_column(JSON, default_factory=dict)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True, default=None
