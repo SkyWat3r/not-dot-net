@@ -113,3 +113,4 @@ ENV/
 # uv
 uv.lock
 .superpowers/
+.worktrees/
