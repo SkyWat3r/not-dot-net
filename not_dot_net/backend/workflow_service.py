@@ -13,7 +13,46 @@ from not_dot_net.backend.workflow_engine import (
     get_current_step_config,
 )
 from not_dot_net.backend.workflow_models import WorkflowEvent, WorkflowRequest
+from not_dot_net.backend.notifications import notify
 from not_dot_net.config import get_settings
+
+
+async def _fire_notifications(req, event: str, step_key: str, wf):
+    """Fire notifications for a workflow event. Best-effort.
+
+    Note: each lookup opens a fresh session (N+1). Acceptable at current scale.
+    """
+    from not_dot_net.backend.db import get_async_session, User
+    from not_dot_net.backend.roles import Role as RoleEnum
+
+    settings = get_settings()
+
+    async def get_user_email(user_id):
+        get_session = asynccontextmanager(get_async_session)
+        async with get_session() as session:
+            user = await session.get(User, user_id)
+            return user.email if user else None
+
+    async def get_users_by_role(role_str):
+        get_session = asynccontextmanager(get_async_session)
+        async with get_session() as session:
+            result = await session.execute(
+                select(User).where(
+                    User.role == RoleEnum(role_str),
+                    User.is_active == True,
+                )
+            )
+            return list(result.scalars().all())
+
+    await notify(
+        request=req,
+        event=event,
+        step_key=step_key,
+        workflow=wf,
+        mail_settings=settings.mail,
+        get_user_email=get_user_email,
+        get_users_by_role=get_users_by_role,
+    )
 
 
 def _get_workflow_config(workflow_type: str):
@@ -127,6 +166,13 @@ async def submit_step(
 
         await session.commit()
         await session.refresh(req)
+
+        # Fire notifications (after commit, best-effort)
+        try:
+            await _fire_notifications(req, action, event.step_key, wf)
+        except Exception:
+            pass  # notifications are best-effort, don't fail the step
+
         return req
 
 
