@@ -19,6 +19,7 @@ from not_dot_net.backend.booking_service import (
 )
 from not_dot_net.backend.db import User, get_async_session
 from not_dot_net.backend.roles import Role, has_role
+from not_dot_net.config import get_settings
 from not_dot_net.frontend.i18n import t
 
 from contextlib import asynccontextmanager
@@ -43,7 +44,7 @@ async def _get_user_name(user_id: uuid.UUID) -> str:
         return u.full_name or u.email if u else "?"
 
 
-async def _render_bookings(container, user: User):
+async def _render_bookings(container, user: User, filter_range=None):
     container.clear()
     is_admin = has_role(user, Role.ADMIN)
     resources = await list_resources(active_only=not is_admin)
@@ -84,7 +85,56 @@ async def _render_bookings(container, user: User):
 
             ui.separator().classes("mb-4")
 
-        # --- Resources ---
+        # --- Global date range filter ---
+        today = date.today()
+        default_range = filter_range or {"from": str(today), "to": str(today + timedelta(days=7))}
+        state = {"range": default_range}
+
+        def _range_label(r):
+            return f"{r['from']} → {r['to']}" if isinstance(r, dict) else ""
+
+        sites = get_settings().sites
+
+        with ui.row().classes("items-center gap-2 mb-3"):
+            ui.icon("date_range", size="sm").classes("text-primary")
+            range_display = ui.input(
+                t("filter"), value=_range_label(default_range),
+            ).props("outlined dense readonly").classes("min-w-[250px]")
+            with range_display.add_slot("append"):
+                ui.icon("event").classes("cursor-pointer")
+            with ui.menu() as menu:
+                date_picker = ui.date(default_range).props("range")
+
+            site_select = ui.select(
+                options={None: t("all_types")} | {s: s for s in sites},
+                value=None, label=t("resource_location"),
+            ).props("outlined dense").classes("min-w-[150px]")
+
+            type_select = ui.select(
+                options={None: t("all_types")} | {rt: t(rt) for rt in RESOURCE_TYPES},
+                value=None, label=t("resource_type"),
+            ).props("outlined dense").classes("min-w-[150px]")
+
+        resource_area = ui.column().classes("w-full")
+
+        async def apply_filter():
+            val = date_picker.value
+            if not val or not isinstance(val, dict):
+                return
+            state["range"] = val
+            range_display.value = _range_label(val)
+            menu.close()
+            await _render_resource_list(
+                container, resource_area, resources, user, is_admin, val,
+                site_filter=site_select.value,
+                type_filter=type_select.value,
+            )
+
+        date_picker.on_value_change(lambda _: apply_filter())
+        site_select.on_value_change(lambda _: apply_filter())
+        type_select.on_value_change(lambda _: apply_filter())
+
+        # --- Resources header ---
         with ui.row().classes("items-center justify-between w-full mb-2"):
             ui.label(t("resources")).classes("text-h6")
             if is_admin:
@@ -97,13 +147,73 @@ async def _render_bookings(container, user: User):
             ui.label(t("no_bookings")).classes("text-grey")
             return
 
-        state = {"expanded_id": None}
+        # Initial render with default range
+        await _render_resource_list(
+            container, resource_area, resources, user, is_admin, default_range,
+        )
 
-        with ui.element("div").classes(
-            "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"
-        ):
-            for res in resources:
-                await _resource_card(container, res, user, is_admin, state)
+
+async def _render_resource_list(outer_container, area, resources, user, is_admin, date_range,
+                                site_filter=None, type_filter=None):
+    """Render resource cards filtered by availability, site, and type."""
+    area.clear()
+    try:
+        range_start = date.fromisoformat(date_range["from"])
+        range_end = date.fromisoformat(date_range["to"]) + timedelta(days=1)
+    except (ValueError, KeyError):
+        return
+
+    # Apply site and type filters
+    filtered = resources
+    if site_filter:
+        filtered = [r for r in filtered if r.location == site_filter]
+    if type_filter:
+        filtered = [r for r in filtered if r.resource_type == type_filter]
+
+    # Build availability map
+    availability: dict[uuid.UUID, bool] = {}
+    for res in filtered:
+        bookings = await list_bookings_for_resource(
+            res.id, from_date=range_start, to_date=range_end,
+        )
+        has_conflict = any(
+            b.start_date < range_end and b.end_date > range_start for b in bookings
+        )
+        availability[res.id] = not has_conflict
+
+    sites = get_settings().sites
+    state = {"expanded_id": None}
+
+    with area:
+        if not filtered:
+            ui.label(t("no_bookings")).classes("text-grey")
+            return
+
+        # Group by site
+        by_site: dict[str, list] = {s: [] for s in sites}
+        by_site[""] = []
+        for res in filtered:
+            key = res.location if res.location in by_site else ""
+            by_site[key].append(res)
+
+        for site, site_resources in by_site.items():
+            if not site_resources:
+                continue
+            if site:
+                ui.label(site).classes("text-subtitle1 font-bold mt-3 mb-1")
+
+            # Available first, then booked
+            site_resources.sort(key=lambda r: (not availability.get(r.id, True)))
+
+            with ui.element("div").classes(
+                "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"
+            ):
+                for res in site_resources:
+                    await _resource_card(
+                        outer_container, res, user, is_admin, state,
+                        is_available=availability.get(res.id, True),
+                        book_range=date_range,
+                    )
 
 
 def _get_resource_for_booking(resource_id, resources):
@@ -113,11 +223,8 @@ def _get_resource_for_booking(resource_id, resources):
     return None
 
 
-async def _resource_card(outer_container, res, user, is_admin, state):
-    today = date.today()
-    bookings = await list_bookings_for_resource(res.id, from_date=today)
-    is_available = not any(b.start_date <= today < b.end_date for b in bookings)
-
+async def _resource_card(outer_container, res, user, is_admin, state,
+                         is_available=True, book_range=None):
     with ui.card().classes("cursor-pointer q-py-sm q-px-md") as card:
         with ui.row().classes("items-center justify-between w-full"):
             with ui.column().classes("gap-0"):
@@ -126,8 +233,6 @@ async def _resource_card(outer_container, res, user, is_admin, state):
                     ui.icon(icon, size="sm").classes("text-grey-7")
                     ui.label(res.name).classes("font-bold")
                 ui.label(t(res.resource_type)).classes("text-xs text-grey")
-                if res.location:
-                    ui.label(res.location).classes("text-xs text-grey")
             ui.badge(
                 t("available") if is_available else t("booked_by"),
                 color="positive" if is_available else "orange",
@@ -151,13 +256,13 @@ async def _resource_card(outer_container, res, user, is_admin, state):
             with dc:
                 ui.separator()
                 await _render_resource_detail(
-                    outer_container, r, user, is_admin,
+                    outer_container, r, user, is_admin, book_range=book_range,
                 )
 
         card.on("click", toggle)
 
 
-async def _render_resource_detail(outer_container, res, user, is_admin):
+async def _render_resource_detail(outer_container, res, user, is_admin, book_range=None):
     if res.description:
         ui.label(res.description).classes("text-sm text-grey-8 mb-2")
 
@@ -191,21 +296,18 @@ async def _render_resource_detail(outer_container, res, user, is_admin):
                         "flat dense round size=xs color=negative"
                     )
 
-    # Book form
+    # Book form — pre-filled from global range picker
     ui.label(t("book")).classes("text-subtitle2 mt-3 mb-1")
-    default_range = {"from": str(today), "to": str(today + timedelta(days=1))}
-    date_picker = ui.date(default_range).props("range")
+    default_range = book_range or {"from": str(today), "to": str(today + timedelta(days=1))}
+    range_label = f"{default_range['from']} → {default_range['to']}"
     with ui.row().classes("items-center gap-2"):
+        ui.label(range_label).classes("text-sm text-grey-8")
         note_input = ui.input(t("note")).props("outlined dense")
 
         async def do_book():
-            val = date_picker.value
-            if not val or not isinstance(val, dict):
-                ui.notify("Select a date range", color="negative")
-                return
             try:
-                s = date.fromisoformat(val["from"])
-                e = date.fromisoformat(val["to"]) + timedelta(days=1)
+                s = date.fromisoformat(default_range["from"])
+                e = date.fromisoformat(default_range["to"]) + timedelta(days=1)
             except (ValueError, KeyError):
                 ui.notify("Invalid date range", color="negative")
                 return
@@ -260,9 +362,11 @@ def _show_resource_dialog(outer_container, user, resource=None):
             label=t("resource_type"),
         ).props("outlined dense").classes("w-full")
 
-        location_input = ui.input(
-            t("resource_location"),
-            value=resource.location or "" if editing else "",
+        sites = get_settings().sites
+        location_select = ui.select(
+            options=sites,
+            value=resource.location if editing and resource.location in sites else sites[0],
+            label=t("resource_location"),
         ).props("outlined dense").classes("w-full")
 
         desc_input = ui.textarea(
@@ -283,7 +387,7 @@ def _show_resource_dialog(outer_container, user, resource=None):
                             resource.id,
                             name=name_input.value.strip(),
                             resource_type=type_select.value,
-                            location=location_input.value.strip() or None,
+                            location=location_select.value,
                             description=desc_input.value.strip() or None,
                         )
                         ui.notify(t("resource_updated"), color="positive")
@@ -292,7 +396,7 @@ def _show_resource_dialog(outer_container, user, resource=None):
                             name=name_input.value.strip(),
                             resource_type=type_select.value,
                             description=desc_input.value.strip(),
-                            location=location_input.value.strip(),
+                            location=location_select.value,
                         )
                         ui.notify(t("resource_created"), color="positive")
                 except Exception as e:

@@ -84,6 +84,7 @@ class Settings(BaseSettings):
         "Theory & Simulation",
         "Administration",
     ]
+    sites: list[str] = ["Palaiseau", "Jussieu"]
     # "mail_config" alias avoids collision with MAIL env var (/var/spool/mail/...)
     # YAML key is "mail_config:", not "mail:"
     mail: MailSettings = Field(default_factory=MailSettings, alias="mail_config")

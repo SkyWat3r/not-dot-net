@@ -149,12 +149,12 @@ WORKFLOW_SEEDS = [
 
 
 SEED_RESOURCES = [
-    {"name": "Salle Calcul PC-01", "type": "desktop", "location": "A201", "description": "Workstation 32 cores, 128GB RAM"},
-    {"name": "Salle Calcul PC-02", "type": "desktop", "location": "A201", "description": "Workstation 32 cores, 128GB RAM"},
-    {"name": "Salle Calcul PC-03", "type": "desktop", "location": "A201", "description": "Workstation 16 cores, 64GB RAM"},
-    {"name": "Portable Dell-01", "type": "laptop", "location": "B102", "description": "Dell Latitude, docking station included"},
-    {"name": "Portable Dell-02", "type": "laptop", "location": "B102", "description": "Dell Latitude"},
-    {"name": "Portable Mac-01", "type": "laptop", "location": "B102", "description": "MacBook Pro M3"},
-    {"name": "GPU Workstation", "type": "desktop", "location": "A203", "description": "NVIDIA A100, 256GB RAM — ML/simulation"},
-    {"name": "Salle Manip PC", "type": "desktop", "location": "C110", "description": "Connected to plasma chamber instruments"},
+    {"name": "Salle Calcul PC-01", "type": "desktop", "location": "Palaiseau", "description": "Workstation 32 cores, 128GB RAM"},
+    {"name": "Salle Calcul PC-02", "type": "desktop", "location": "Palaiseau", "description": "Workstation 32 cores, 128GB RAM"},
+    {"name": "Salle Calcul PC-03", "type": "desktop", "location": "Palaiseau", "description": "Workstation 16 cores, 64GB RAM"},
+    {"name": "Portable Dell-01", "type": "laptop", "location": "Palaiseau", "description": "Dell Latitude, docking station included"},
+    {"name": "Portable Dell-02", "type": "laptop", "location": "Jussieu", "description": "Dell Latitude"},
+    {"name": "Portable Mac-01", "type": "laptop", "location": "Jussieu", "description": "MacBook Pro M3"},
+    {"name": "GPU Workstation", "type": "desktop", "location": "Palaiseau", "description": "NVIDIA A100, 256GB RAM — ML/simulation"},
+    {"name": "Salle Manip PC", "type": "desktop", "location": "Jussieu", "description": "Connected to plasma chamber instruments"},
 ]
