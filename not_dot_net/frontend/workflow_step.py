@@ -7,7 +7,7 @@ from not_dot_net.config import WorkflowStepConfig
 from not_dot_net.frontend.i18n import t
 
 
-def render_step_form(
+async def render_step_form(
     step: WorkflowStepConfig,
     data: dict,
     on_submit,
@@ -34,7 +34,7 @@ def render_step_form(
                     ui.icon("edit_calendar").on("click", menu.open).classes("cursor-pointer")
             fields[field_cfg.name] = inp
         elif field_cfg.type == "select":
-            options = _resolve_options(field_cfg.options_key)
+            options = await _resolve_options(field_cfg.options_key)
             fields[field_cfg.name] = ui.select(
                 label=label, options=options, value=value if value in options else None
             ).props("outlined dense").classes("w-full")
@@ -154,14 +154,14 @@ def _set_date(inp, menu, event):
     menu.close()
 
 
-def _resolve_options(options_key: str | None) -> list[str]:
+async def _resolve_options(options_key: str | None) -> list[str]:
     """Resolve select field options from config."""
     if not options_key:
         return []
-    from not_dot_net.config import get_settings
-    settings = get_settings()
     if options_key == "teams":
-        return settings.teams
+        from not_dot_net.config import org_config
+        cfg = await org_config.get()
+        return cfg.teams
     if options_key == "roles":
         from not_dot_net.backend.roles import Role
         return [r.value for r in Role]

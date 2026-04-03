@@ -4,21 +4,20 @@ from nicegui import ui
 
 from not_dot_net.backend.db import User
 from not_dot_net.backend.roles import Role, has_role
-from not_dot_net.backend.workflow_service import create_request
-from not_dot_net.config import get_settings
+from not_dot_net.backend.workflow_service import create_request, workflows_config
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_step import render_step_form
 
 
-def render(user: User):
+async def render(user: User):
     """Render the new request tab content."""
-    settings = get_settings()
+    cfg = await workflows_config.get()
     container = ui.column().classes("w-full")
 
     with container:
         ui.label(t("select_workflow")).classes("text-h6 mb-4")
 
-        for wf_key, wf_config in settings.workflows.items():
+        for wf_key, wf_config in cfg.workflows.items():
             if not has_role(user, Role(wf_config.start_role)):
                 continue
 
@@ -40,12 +39,12 @@ def render(user: User):
                     ui.notify(t("request_created"), color="positive")
                     fc.set_visibility(False)
 
-                def toggle_form(fc=form_container, step=first_step):
+                async def toggle_form(fc=form_container, step=first_step):
                     visible = not fc.visible
                     fc.set_visibility(visible)
                     if visible:
                         fc.clear()
                         with fc:
-                            render_step_form(step, {}, on_submit=handle_submit)
+                            await render_step_form(step, {}, on_submit=handle_submit)
 
                 card.on("click", toggle_form)

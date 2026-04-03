@@ -8,7 +8,7 @@ from not_dot_net.backend.workflow_service import (
     submit_step,
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config
-from not_dot_net.config import get_settings
+from not_dot_net.backend.workflow_service import workflows_config
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_step import render_step_form
 
@@ -24,8 +24,8 @@ def setup():
                 ui.label(t("token_expired")).classes("text-h6")
             return
 
-        settings = get_settings()
-        wf = settings.workflows.get(req.type)
+        cfg = await workflows_config.get()
+        wf = cfg.workflows.get(req.type)
         if not wf:
             ui.label(t("token_expired"))
             return
@@ -57,7 +57,7 @@ def setup():
                 ui.notify(t("draft_saved"), color="positive")
 
             with form_container:
-                render_step_form(
+                await render_step_form(
                     step_config,
                     req.data,
                     on_submit=handle_submit,

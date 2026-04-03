@@ -12,7 +12,7 @@ from not_dot_net.backend.workflow_service import (
     submit_step,
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config, get_step_progress
-from not_dot_net.config import get_settings
+from not_dot_net.backend.workflow_service import workflows_config
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_step import (
     render_approval,
@@ -33,9 +33,9 @@ def render(user: User):
     ui.timer(0, refresh, once=True)
 
 
-def _workflow_labels() -> dict[str, str]:
-    settings = get_settings()
-    return {k: wf.label for k, wf in settings.workflows.items()}
+async def _workflow_labels() -> dict[str, str]:
+    cfg = await workflows_config.get()
+    return {k: wf.label for k, wf in cfg.workflows.items()}
 
 
 def _format_date(dt) -> str:
@@ -72,8 +72,8 @@ async def _render_my_requests(container, user: User):
             ui.label(t("no_requests")).classes("text-grey")
             return
 
-        settings = get_settings()
-        wf_labels = _workflow_labels()
+        cfg = await workflows_config.get()
+        wf_labels = await _workflow_labels()
 
         columns = [
             {"name": "type", "label": t("workflow_type"), "field": "type", "sortable": True, "align": "left"},
@@ -88,7 +88,7 @@ async def _render_my_requests(container, user: User):
 
         rows = []
         for req in requests:
-            wf = settings.workflows.get(req.type)
+            wf = cfg.workflows.get(req.type)
             step_config = get_current_step_config(req, wf) if wf else None
             step_label = step_config.key if step_config else req.current_step
             current, total = get_step_progress(req, wf) if wf else (0, 0)
@@ -204,8 +204,8 @@ async def _render_actionable(container, user: User):
             ui.label(t("no_pending")).classes("text-grey")
             return
 
-        settings = get_settings()
-        wf_labels = _workflow_labels()
+        cfg = await workflows_config.get()
+        wf_labels = await _workflow_labels()
         state = {"expanded_id": None}
 
         # Responsive grid: 1 col on small, 2 on medium, 3 on large
@@ -213,7 +213,7 @@ async def _render_actionable(container, user: User):
             "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"
         ):
             for req in requests:
-                wf = settings.workflows.get(req.type)
+                wf = cfg.workflows.get(req.type)
                 if not wf:
                     continue
                 step_config = get_current_step_config(req, wf)
@@ -290,4 +290,4 @@ def _render_action_form(outer_container, user, req, step_config, wf):
     if step_config.type == "approval":
         render_approval(req.data, wf, step_config, handle_approve, handle_reject)
     elif step_config.type == "form":
-        render_step_form(step_config, req.data, on_submit=handle_submit)
+        await render_step_form(step_config, req.data, on_submit=handle_submit)

@@ -25,7 +25,7 @@ from not_dot_net.backend.app_settings import (
 )
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.roles import Role, has_role
-from not_dot_net.config import get_settings
+from not_dot_net.config import org_config
 from not_dot_net.frontend.i18n import t
 
 RESOURCE_TYPES = ["desktop", "laptop"]
@@ -97,7 +97,8 @@ async def _render_bookings(container, user: User, filter_range=None):
         def _range_label(r):
             return f"{r['from']} → {r['to']}" if isinstance(r, dict) else ""
 
-        sites = get_settings().sites
+        org = await org_config.get()
+        sites = org.sites
 
         with ui.row().classes("items-center gap-2 mb-3"):
             ui.icon("date_range", size="sm").classes("text-primary")
@@ -192,7 +193,8 @@ async def _render_resource_list(outer_container, area, resources, user, is_admin
         )
         availability[res.id] = not has_conflict
 
-    sites = get_settings().sites
+    org = await org_config.get()
+    sites = org.sites
     state = {"expanded_id": None}
 
     with area:
@@ -426,7 +428,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
             ).props("flat dense color=negative")
 
 
-def _show_resource_dialog(outer_container, user, resource=None):
+async def _show_resource_dialog(outer_container, user, resource=None):
     editing = resource is not None
 
     with ui.dialog() as dialog, ui.card().classes("w-96"):
@@ -442,7 +444,8 @@ def _show_resource_dialog(outer_container, user, resource=None):
             label=t("resource_type"),
         ).props("outlined dense").classes("w-full")
 
-        sites = get_settings().sites
+        org = await org_config.get()
+        sites = org.sites
         location_select = ui.select(
             options=sites,
             value=resource.location if editing and resource.location in sites else sites[0],
