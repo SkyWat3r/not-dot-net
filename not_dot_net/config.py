@@ -67,26 +67,3 @@ class BookingsConfig(BaseModel):
 
 
 bookings_config = section("bookings", BookingsConfig, label="Bookings")
-
-
-# --- Backward-compat shims (removed in Task 7) ---
-# These allow modules not yet migrated (users.py, frontend, tests) to import
-# without crashing at module load time. Calling them at runtime will fail.
-
-# Re-export old names so `from not_dot_net.config import MailSettings` etc. still resolve
-MailSettings = None  # replaced by backend.mail.MailConfig
-LDAPSettings = None  # replaced by backend.auth.ldap.LdapConfig
-
-
-def get_settings():
-    raise RuntimeError(
-        "get_settings() has been removed. "
-        "Use the config section for the module you need (e.g. org_config, mail_config, etc.)."
-    )
-
-
-def init_settings(config_file=None):
-    raise RuntimeError(
-        "init_settings() has been removed. "
-        "Config sections are now DB-backed via app_config.section()."
-    )
