@@ -2,9 +2,9 @@ import pytest
 from ldap3 import Server, Connection, MOCK_SYNC, OFFLINE_AD_2012_R2
 
 from not_dot_net.backend.auth.ldap import ldap_authenticate
-from not_dot_net.config import LDAPSettings
+from not_dot_net.backend.auth.ldap import LdapConfig
 
-LDAP_CFG = LDAPSettings(url="fake", domain="example.com", base_dn="dc=example,dc=com")
+LDAP_CFG = LdapConfig(url="fake", domain="example.com", base_dn="dc=example,dc=com")
 
 FAKE_USERS = {
     "jdoe": {"mail": "jdoe@example.com", "password": "secret"},
@@ -12,7 +12,7 @@ FAKE_USERS = {
 }
 
 
-def fake_ldap_connect(ldap_cfg: LDAPSettings, username: str, password: str) -> Connection:
+def fake_ldap_connect(ldap_cfg: LdapConfig, username: str, password: str) -> Connection:
     """Build a MOCK_SYNC connection pre-populated with fake AD entries."""
     server = Server("fake_ad", get_info=OFFLINE_AD_2012_R2)
     conn = Connection(server, user=f"{username}@{ldap_cfg.domain}", password=password, client_strategy=MOCK_SYNC)

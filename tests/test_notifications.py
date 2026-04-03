@@ -7,8 +7,8 @@ from not_dot_net.config import (
     WorkflowStepConfig,
     NotificationRuleConfig,
     FieldConfig,
-    MailSettings,
 )
+from not_dot_net.backend.mail import MailConfig
 from not_dot_net.backend.roles import Role
 
 
@@ -159,7 +159,7 @@ async def test_notify_sends_to_resolved_recipients():
             event="submit",
             step_key="request",
             workflow=VPN_WORKFLOW,
-            mail_settings=MailSettings(dev_mode=True),
+            mail_settings=MailConfig(dev_mode=True),
             get_user_email=AsyncMock(return_value="requester@test.com"),
             get_users_by_role=AsyncMock(return_value=[FakeUser("dir@test.com")]),
         )

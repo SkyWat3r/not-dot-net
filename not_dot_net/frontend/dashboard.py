@@ -254,12 +254,12 @@ async def _render_actionable(container, user: User):
                         ac.clear()
                         with ac:
                             ui.separator()
-                            _render_action_form(container, user, r, sc, w)
+                            await _render_action_form(container, user, r, sc, w)
 
                     card.on("click", _expand)
 
 
-def _render_action_form(outer_container, user, req, step_config, wf):
+async def _render_action_form(outer_container, user, req, step_config, wf):
     async def handle_approve(comment, r=req):
         try:
             await submit_step(r.id, user.id, "approve", comment=comment)

@@ -1,11 +1,11 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 from not_dot_net.backend.mail import send_mail
-from not_dot_net.config import MailSettings
+from not_dot_net.backend.mail import MailConfig
 
 
 async def test_dev_mode_logs_to_console(caplog):
-    settings = MailSettings(dev_mode=True)
+    settings = MailConfig(dev_mode=True)
     with caplog.at_level("INFO", logger="not_dot_net.mail"):
         await send_mail(
             to="user@example.com",
@@ -18,7 +18,7 @@ async def test_dev_mode_logs_to_console(caplog):
 
 
 async def test_dev_catch_all_redirects(caplog):
-    settings = MailSettings(dev_mode=True, dev_catch_all="catch@example.com")
+    settings = MailConfig(dev_mode=True, dev_catch_all="catch@example.com")
     with caplog.at_level("INFO", logger="not_dot_net.mail"):
         await send_mail(
             to="real@example.com",
@@ -31,7 +31,7 @@ async def test_dev_catch_all_redirects(caplog):
 
 
 async def test_production_mode_calls_aiosmtplib():
-    settings = MailSettings(
+    settings = MailConfig(
         dev_mode=False,
         smtp_host="smtp.test.com",
         smtp_port=587,
@@ -54,7 +54,7 @@ async def test_production_mode_calls_aiosmtplib():
 
 
 async def test_production_with_catch_all_redirects():
-    settings = MailSettings(
+    settings = MailConfig(
         dev_mode=False,
         smtp_host="smtp.test.com",
         dev_catch_all="catch@example.com",

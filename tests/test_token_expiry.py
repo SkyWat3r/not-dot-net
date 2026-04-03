@@ -10,29 +10,8 @@ from not_dot_net.backend.workflow_service import (
     get_request_by_token,
 )
 from not_dot_net.backend.workflow_models import WorkflowRequest
-from not_dot_net.backend.db import Base, User, session_scope
+from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.roles import Role
-from not_dot_net.config import init_settings
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-import not_dot_net.backend.db as db_module
-import not_dot_net.backend.workflow_models  # noqa: F401
-import not_dot_net.backend.audit  # noqa: F401
-
-
-@pytest.fixture(autouse=True)
-async def setup_db():
-    init_settings()
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    session_maker = async_sessionmaker(engine, expire_on_commit=False)
-    old_engine, old_session = db_module._engine, db_module._async_session_maker
-    db_module._engine = engine
-    db_module._async_session_maker = session_maker
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield
-    await engine.dispose()
-    db_module._engine, db_module._async_session_maker = old_engine, old_session
 
 
 async def _create_user(email="staff@test.com", role=Role.STAFF) -> User:

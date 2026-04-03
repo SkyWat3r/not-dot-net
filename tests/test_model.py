@@ -30,11 +30,10 @@ def test_user_profile_fields_accept_values():
     assert user.employment_status == "Permanent"
 
 
-def test_settings_has_teams_list():
-    from not_dot_net.config import Settings
-    settings = Settings(jwt_secret="x" * 34, storage_secret="x" * 34)
-    assert hasattr(settings, "teams")
-    assert len(settings.teams) > 0
+def test_org_config_has_teams():
+    from not_dot_net.config import OrgConfig
+    cfg = OrgConfig()
+    assert len(cfg.teams) > 0
 
 
 def test_user_default_role():
