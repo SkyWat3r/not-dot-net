@@ -1,17 +1,57 @@
-from enum import Enum as PyEnum
+"""RBAC role definitions — DB-backed via ConfigSection."""
+
+from pydantic import BaseModel
+
+from not_dot_net.backend.app_config import ConfigSection, section
+
+# Re-export for backward compatibility while other modules are migrated
+from not_dot_net.backend.db import Role  # noqa: F401
 
 
-class Role(str, PyEnum):
-    MEMBER = "member"
-    STAFF = "staff"
-    DIRECTOR = "director"
-    ADMIN = "admin"
+class RoleDefinition(BaseModel):
+    label: str
+    permissions: list[str] = []
 
 
-_ROLE_ORDER = {Role.MEMBER: 0, Role.STAFF: 1, Role.DIRECTOR: 2, Role.ADMIN: 3}
+class RolesConfig(BaseModel):
+    default_role: str = ""
+    roles: dict[str, RoleDefinition] = {
+        "admin": RoleDefinition(
+            label="Administrator",
+            permissions=["manage_roles", "manage_settings"],
+        ),
+    }
 
 
-def has_role(user, minimum_role: Role) -> bool:
-    """Check if user has at least the given role level."""
-    user_role = user.role if isinstance(user.role, Role) else Role(user.role)
-    return _ROLE_ORDER[user_role] >= _ROLE_ORDER[minimum_role]
+LOCKOUT_PERMISSIONS = {"manage_roles", "manage_settings"}
+
+
+class RolesConfigSection(ConfigSection["RolesConfig"]):
+    """ConfigSection with lockout guard for the admin role."""
+
+    async def set(self, value: RolesConfig) -> None:
+        _enforce_admin_lockout(value)
+        await super().set(value)
+
+    async def get(self) -> RolesConfig:
+        value = await super().get()
+        _enforce_admin_lockout(value)
+        return value
+
+
+def _enforce_admin_lockout(cfg: RolesConfig) -> None:
+    """Ensure admin role exists and has critical permissions."""
+    if "admin" not in cfg.roles:
+        cfg.roles["admin"] = RoleDefinition(
+            label="Administrator", permissions=list(LOCKOUT_PERMISSIONS)
+        )
+    admin = cfg.roles["admin"]
+    for perm in LOCKOUT_PERMISSIONS:
+        if perm not in admin.permissions:
+            admin.permissions.append(perm)
+
+
+roles_config = RolesConfigSection("roles", RolesConfig, label="Roles")
+# Register in the global config registry
+from not_dot_net.backend.app_config import _registry
+_registry["roles"] = roles_config

@@ -14,7 +14,11 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from not_dot_net.backend.roles import Role
+class Role(str, PyEnum):
+    MEMBER = "member"
+    STAFF = "staff"
+    DIRECTOR = "director"
+    ADMIN = "admin"
 
 
 class AuthMethod(str, PyEnum):
