@@ -7,6 +7,9 @@ from sqlalchemy import select
 
 from not_dot_net.backend.booking_models import Booking, Resource
 from not_dot_net.backend.db import session_scope
+from not_dot_net.backend.permissions import permission
+
+MANAGE_BOOKINGS = permission("manage_bookings", "Manage bookings", "Create/edit/delete resources and software")
 
 MAX_BOOKING_DAYS = 183  # ~6 months
 

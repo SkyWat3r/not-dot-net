@@ -4,6 +4,9 @@ from nicegui import ui
 
 from not_dot_net.backend.audit import list_audit_events
 from not_dot_net.frontend.i18n import t
+from not_dot_net.backend.permissions import permission
+
+VIEW_AUDIT_LOG = permission("view_audit_log", "View audit log", "Access the audit log")
 
 CATEGORIES = ["auth", "workflow", "booking", "resource", "user"]
 

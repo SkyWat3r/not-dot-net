@@ -8,6 +8,9 @@ from not_dot_net.backend.db import User, session_scope, get_user_db
 from not_dot_net.backend.schemas import UserUpdate
 from not_dot_net.backend.users import get_user_manager
 from not_dot_net.frontend.i18n import t
+from not_dot_net.backend.permissions import permission
+
+MANAGE_USERS = permission("manage_users", "Manage users", "Edit/delete users in directory")
 
 
 async def _load_people() -> list[User]:

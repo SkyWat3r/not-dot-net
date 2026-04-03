@@ -1,6 +1,14 @@
 """Pure-function workflow step machine. No DB, no side effects."""
 
-from not_dot_net.backend.roles import Role, has_role
+# Temporary compat — removed in Task 8 when enforcement is rewritten
+def has_role(user, role_str):
+    return True  # permissive stub until Task 8 rewrites authorization
+
+class _RoleCompat:
+    def __call__(self, val):
+        return val
+Role = _RoleCompat()
+
 from not_dot_net.backend.workflow_models import RequestStatus
 from not_dot_net.config import WorkflowConfig, WorkflowStepConfig
 

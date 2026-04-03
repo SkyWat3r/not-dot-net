@@ -8,7 +8,20 @@ from sqlalchemy import select, or_, and_
 
 from not_dot_net.backend.app_config import section
 from not_dot_net.backend.db import session_scope
-from not_dot_net.backend.roles import Role, has_role
+from not_dot_net.backend.permissions import permission
+
+CREATE_WORKFLOWS = permission("create_workflows", "Create workflows", "Start new workflow requests")
+APPROVE_WORKFLOWS = permission("approve_workflows", "Approve workflows", "Act on role-assigned workflow steps")
+
+# Temporary compat — removed in Task 8 when enforcement is rewritten
+def has_role(user, role_str):
+    return True  # permissive stub until Task 8 rewrites authorization
+
+class _RoleCompat:
+    def __call__(self, val):
+        return val
+Role = _RoleCompat()
+
 from not_dot_net.backend.workflow_engine import (
     compute_next_step,
     get_current_step_config,
