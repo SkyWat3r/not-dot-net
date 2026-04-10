@@ -1,11 +1,8 @@
 """Dashboard tab — My Requests + Awaiting My Action."""
 
-import uuid
-
 from nicegui import ui
-from sqlalchemy import select
 
-from not_dot_net.backend.db import User, session_scope
+from not_dot_net.backend.db import User
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.workflow_service import (
     list_user_requests,
@@ -13,6 +10,7 @@ from not_dot_net.backend.workflow_service import (
     list_actionable,
     list_events_batch,
     compute_step_age_days,
+    resolve_actor_names,
     workflows_config,
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config, get_step_progress
@@ -79,15 +77,6 @@ def _target_display(req) -> str:
     return name or req.target_email or ""
 
 
-async def _resolve_actor_names_batch(actor_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
-    """Resolve actor UUIDs to display names."""
-    if not actor_ids:
-        return {}
-    async with session_scope() as session:
-        result = await session.execute(
-            select(User.id, User.full_name, User.email).where(User.id.in_(actor_ids))
-        )
-        return {row.id: row.full_name or row.email for row in result.all()}
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +252,7 @@ async def _render_actionable(container, user: User):
         for req, _, _, _, _ in card_data:
             if req.created_by:
                 all_actor_ids.add(req.created_by)
-        actor_names = await _resolve_actor_names_batch(all_actor_ids)
+        actor_names = await resolve_actor_names(all_actor_ids)
 
         with ui.element("div").classes(
             "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"

@@ -16,6 +16,7 @@ from not_dot_net.backend.workflow_service import (
     compute_step_age_days,
     get_request_by_id,
     list_events,
+    resolve_actor_names,
     submit_step,
     workflows_config,
 )
@@ -64,7 +65,7 @@ def setup():
         events = await list_events(req.id)
         dash_cfg = await dashboard_config.get()
         age = compute_step_age_days(events, req.current_step)
-        actor_names = await _resolve_actor_names([ev.actor_id for ev in events])
+        actor_names = await resolve_actor_names([ev.actor_id for ev in events])
 
         files_by_step = await _load_files(req.id)
 
@@ -216,28 +217,12 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
             await render_step_form(step_config, req.data, on_submit=handle_submit)
 
 
-async def _resolve_actor_names(actor_ids: list[uuid.UUID | None]) -> dict[uuid.UUID, str]:
-    """Resolve actor UUIDs to display names. Single query."""
-    unique_ids = {aid for aid in actor_ids if aid is not None}
-    if not unique_ids:
-        return {}
-    async with session_scope() as session:
-        from sqlalchemy import select
-        result = await session.execute(
-            select(User.id, User.full_name, User.email).where(User.id.in_(unique_ids))
-        )
-        return {
-            row.id: row.full_name or row.email
-            for row in result.all()
-        }
-
-
 async def _load_files(request_id: uuid.UUID) -> dict[str, list[WorkflowFile]]:
     """Load all files for a request, grouped by step_key."""
+    from sqlalchemy import select as sa_select
     async with session_scope() as session:
-        from sqlalchemy import select
         result = await session.execute(
-            select(WorkflowFile).where(WorkflowFile.request_id == request_id)
+            sa_select(WorkflowFile).where(WorkflowFile.request_id == request_id)
         )
         files: dict[str, list[WorkflowFile]] = {}
         for f in result.scalars().all():

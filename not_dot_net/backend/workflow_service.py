@@ -358,26 +358,9 @@ async def list_user_requests(user_id: uuid.UUID) -> list[WorkflowRequest]:
 
 
 async def list_actionable(user) -> list[WorkflowRequest]:
-    """List requests where this user can act on the current step.
-
-    Builds SQL OR-conditions from workflow config so filtering happens in the
-    database instead of loading all active requests into Python.
-    """
+    """List requests where this user can act on the current step."""
     cfg = await workflows_config.get()
-    filters = []
-    for wf_type, wf in cfg.workflows.items():
-        for step in wf.steps:
-            step_match = and_(
-                WorkflowRequest.type == wf_type,
-                WorkflowRequest.current_step == step.key,
-            )
-            if step.assignee_permission and await has_permissions(user, step.assignee_permission):
-                filters.append(step_match)
-            elif step.assignee == "target_person":
-                filters.append(and_(step_match, WorkflowRequest.target_email == user.email))
-            elif step.assignee == "requester":
-                filters.append(and_(step_match, WorkflowRequest.created_by == user.id))
-
+    filters = await _build_actionable_filters(user, cfg)
     if not filters:
         return []
 
@@ -429,15 +412,14 @@ async def list_all_requests() -> list[WorkflowRequest]:
 
 
 def compute_step_age_days(events: list[WorkflowEvent], current_step: str) -> int:
-    """Compute days since the last event that transitioned to the current step."""
+    """Compute days since the last event on the current step (or fallback to last event)."""
     if not events:
         return 0
-    relevant = None
-    for ev in events:
-        if ev.step_key == current_step or ev.action in ("submit", "approve", "create"):
-            relevant = ev
-    if relevant is None:
-        relevant = events[-1]
+    # Prefer the last event on the current step
+    relevant = next(
+        (ev for ev in reversed(events) if ev.step_key == current_step),
+        events[-1],
+    )
     if relevant.created_at is None:
         return 0
     now = datetime.now(timezone.utc)
@@ -447,9 +429,8 @@ def compute_step_age_days(events: list[WorkflowEvent], current_step: str) -> int
     return (now - created).days
 
 
-async def get_actionable_count(user) -> int:
-    """Return count of requests where user can act. Lightweight version of list_actionable."""
-    cfg = await workflows_config.get()
+async def _build_actionable_filters(user, cfg):
+    """Build SQL OR-conditions for steps where user can act."""
     filters = []
     for wf_type, wf in cfg.workflows.items():
         for step in wf.steps:
@@ -463,7 +444,13 @@ async def get_actionable_count(user) -> int:
                 filters.append(and_(step_match, WorkflowRequest.target_email == user.email))
             elif step.assignee == "requester":
                 filters.append(and_(step_match, WorkflowRequest.created_by == user.id))
+    return filters
 
+
+async def get_actionable_count(user) -> int:
+    """Return count of requests where user can act."""
+    cfg = await workflows_config.get()
+    filters = await _build_actionable_filters(user, cfg)
     if not filters:
         return 0
 
@@ -475,3 +462,17 @@ async def get_actionable_count(user) -> int:
             .where(WorkflowRequest.status == RequestStatus.IN_PROGRESS, or_(*filters))
         )
         return result.scalar_one()
+
+
+async def resolve_actor_names(actor_ids) -> dict[uuid.UUID, str]:
+    """Resolve actor UUIDs to display names. Single query."""
+    unique_ids = {aid for aid in actor_ids if aid is not None}
+    if not unique_ids:
+        return {}
+    from not_dot_net.backend.db import User as UserModel
+    async with session_scope() as session:
+        result = await session.execute(
+            select(UserModel.id, UserModel.full_name, UserModel.email)
+            .where(UserModel.id.in_(unique_ids))
+        )
+        return {row.id: row.full_name or row.email for row in result.all()}
