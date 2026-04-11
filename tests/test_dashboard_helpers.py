@@ -55,13 +55,14 @@ async def _setup_roles():
 
 
 async def test_compute_step_age_days():
+    await _setup_roles()
     staff = await _create_user(email="age_staff@test.com", role="staff")
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
         data={"target_name": "X", "target_email": "x@test.com"},
     )
-    await submit_step(req.id, staff.id, "submit", data={})
+    await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     events = await list_events(req.id)
     age = compute_step_age_days(events, "approval")
     assert isinstance(age, int)
@@ -77,7 +78,7 @@ async def test_get_actionable_count():
         created_by=staff.id,
         data={"target_name": "A", "target_email": "a@test.com"},
     )
-    await submit_step(req.id, staff.id, "submit", data={})
+    await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     count = await get_actionable_count(director)
     assert count == 1
 

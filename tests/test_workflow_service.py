@@ -65,18 +65,20 @@ async def test_create_request():
 
 
 async def test_submit_step_advances():
+    await _setup_roles()
     user = await _create_user()
     req = await create_request(
         workflow_type="vpn_access",
         created_by=user.id,
         data={"target_name": "Alice", "target_email": "alice@test.com"},
     )
-    updated = await submit_step(req.id, user.id, "submit", data={})
+    updated = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
     assert updated.current_step == "approval"
     assert updated.status == "in_progress"
 
 
 async def test_approve_completes_workflow():
+    await _setup_roles()
     staff = await _create_user(email="staff@test.com", role="staff")
     director = await _create_user(email="director@test.com", role="director")
     req = await create_request(
@@ -84,12 +86,13 @@ async def test_approve_completes_workflow():
         created_by=staff.id,
         data={"target_name": "Alice", "target_email": "alice@test.com"},
     )
-    req = await submit_step(req.id, staff.id, "submit", data={})
-    req = await submit_step(req.id, director.id, "approve", data={})
+    req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
+    req = await submit_step(req.id, director.id, "approve", data={}, actor_user=director)
     assert req.status == "completed"
 
 
 async def test_reject_terminates_workflow():
+    await _setup_roles()
     staff = await _create_user(email="staff@test.com", role="staff")
     director = await _create_user(email="director@test.com", role="director")
     req = await create_request(
@@ -97,12 +100,13 @@ async def test_reject_terminates_workflow():
         created_by=staff.id,
         data={"target_name": "Alice", "target_email": "alice@test.com"},
     )
-    req = await submit_step(req.id, staff.id, "submit", data={})
-    req = await submit_step(req.id, director.id, "reject", data={}, comment="Not justified")
+    req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
+    req = await submit_step(req.id, director.id, "reject", data={}, comment="Not justified", actor_user=director)
     assert req.status == "rejected"
 
 
 async def test_save_draft():
+    await _setup_roles()
     user = await _create_user()
     req = await create_request(
         workflow_type="onboarding",
@@ -111,11 +115,11 @@ async def test_save_draft():
               "role_status": "intern", "team": "Plasma Physics",
               "start_date": "2026-04-01"},
     )
-    # Advance to newcomer_info step
-    req = await submit_step(req.id, user.id, "submit", data={})
+    # Advance to newcomer_info step (generates token for target_person)
+    req = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
     assert req.current_step == "newcomer_info"
-    # Save partial data
-    req = await save_draft(req.id, data={"phone": "+33 1 23 45"})
+    # Save partial data using the token
+    req = await save_draft(req.id, data={"phone": "+33 1 23 45"}, actor_token=req.token)
     assert req.data["phone"] == "+33 1 23 45"
     assert req.current_step == "newcomer_info"  # still same step
 
@@ -146,7 +150,7 @@ async def test_list_actionable_by_role():
         data={"target_name": "A", "target_email": "a@test.com"},
     )
     # Submit first step to move to approval
-    await submit_step(req.id, staff.id, "submit", data={})
+    await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     # Director should see it as actionable
     actionable = await list_actionable(director)
     assert len(actionable) == 1
@@ -172,6 +176,7 @@ async def test_get_request_by_id_not_found():
 
 async def test_token_generated_for_target_person_step():
     """After submitting the onboarding request step, a token should be generated for the newcomer_info step."""
+    await _setup_roles()
     user = await _create_user()
     req = await create_request(
         workflow_type="onboarding",
@@ -180,7 +185,7 @@ async def test_token_generated_for_target_person_step():
               "role_status": "intern", "team": "Plasma Physics",
               "start_date": "2026-04-01"},
     )
-    req = await submit_step(req.id, user.id, "submit", data={})
+    req = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
     assert req.current_step == "newcomer_info"
     assert req.token is not None
     assert req.token_expires_at is not None
@@ -188,6 +193,7 @@ async def test_token_generated_for_target_person_step():
 
 async def test_token_cleared_on_approval():
     """Token should be cleared after a non-draft action."""
+    await _setup_roles()
     staff = await _create_user(email="staff@test.com", role="staff")
     director = await _create_user(email="director@test.com", role="director")
     req = await create_request(
@@ -195,8 +201,8 @@ async def test_token_cleared_on_approval():
         created_by=staff.id,
         data={"target_name": "Alice", "target_email": "alice@test.com"},
     )
-    req = await submit_step(req.id, staff.id, "submit", data={})
-    req = await submit_step(req.id, director.id, "approve", data={})
+    req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
+    req = await submit_step(req.id, director.id, "approve", data={}, actor_user=director)
     assert req.token is None
     assert req.token_expires_at is None
 
@@ -211,18 +217,9 @@ async def test_authorization_check_blocks_wrong_user():
         created_by=staff.id,
         data={"target_name": "Alice", "target_email": "alice@test.com"},
     )
-    # member cannot submit on the staff-assigned request step
-    # The engine returns True for permission-based steps, but service layer
-    # doesn't use actor_user for permission check in submit_step — it uses
-    # can_user_act which now returns True for permission-based steps.
-    # So we test via create_request with actor instead.
+    # member has no create_workflows permission — blocked by submit_step
     with pytest.raises(PermissionError):
-        await create_request(
-            workflow_type="vpn_access",
-            created_by=member.id,
-            data={"target_name": "Alice", "target_email": "alice@test.com"},
-            actor=member,
-        )
+        await submit_step(req.id, member.id, "submit", data={}, actor_user=member)
 
 
 async def test_list_actionable_returns_only_in_progress():
@@ -235,8 +232,8 @@ async def test_list_actionable_returns_only_in_progress():
         created_by=staff.id,
         data={"target_name": "A", "target_email": "a@test.com"},
     )
-    req = await submit_step(req.id, staff.id, "submit", data={})
-    req = await submit_step(req.id, director.id, "approve", data={})
+    req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
+    req = await submit_step(req.id, director.id, "approve", data={}, actor_user=director)
     assert req.status == "completed"
 
     actionable = await list_actionable(director)

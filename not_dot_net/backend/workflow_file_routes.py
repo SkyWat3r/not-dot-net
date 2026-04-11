@@ -24,11 +24,7 @@ async def can_view_request(user: User, req: WorkflowRequest) -> bool:
         return True
     cfg = await workflows_config.get()
     wf = cfg.workflows.get(req.type)
-    if wf and can_user_act(user, req, wf):
-        from not_dot_net.backend.workflow_engine import get_current_step_config
-        step = get_current_step_config(req, wf)
-        if step and step.assignee_permission:
-            return await has_permissions(user, step.assignee_permission)
+    if wf and await can_user_act(user, req, wf):
         return True
     return False
 
@@ -49,7 +45,14 @@ async def download_file(
     if not await can_view_request(user, req):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    path = Path(wf_file.storage_path)
+    raw = Path(wf_file.storage_path)
+    if raw.is_absolute():
+        raise HTTPException(status_code=403, detail="Access denied")
+    path = raw.resolve()
+    # Ensure the resolved path stays within the working directory
+    cwd = Path.cwd().resolve()
+    if not path.is_relative_to(cwd):
+        raise HTTPException(status_code=403, detail="Access denied")
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
     return FileResponse(path, filename=wf_file.filename)

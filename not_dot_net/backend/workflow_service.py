@@ -8,6 +8,15 @@ from sqlalchemy import select, or_, and_
 
 from not_dot_net.backend.app_config import section
 from not_dot_net.backend.db import session_scope
+
+
+def _token_is_expired(expires_at: datetime | None) -> bool:
+    if expires_at is None:
+        return True
+    now = datetime.now(timezone.utc)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at < now
 from not_dot_net.backend.permissions import permission, check_permission, has_permissions
 
 CREATE_WORKFLOWS = permission("create_workflows", "Create workflows", "Start new workflow requests")
@@ -215,8 +224,12 @@ async def submit_step(
     data: dict | None = None,
     comment: str | None = None,
     actor_user=None,
+    actor_token: str | None = None,
 ) -> WorkflowRequest:
-    """Submit an action on the current step. Pass actor_user for authorization check."""
+    """Submit an action on the current step.
+
+    Exactly one of actor_user or actor_token must be provided for authorization.
+    """
     async with session_scope() as session:
         req = await session.get(WorkflowRequest, request_id)
         if req is None:
@@ -224,11 +237,16 @@ async def submit_step(
 
         wf = await _get_workflow_config(req.type)
 
-        # Authorization: verify actor can act on this step
-        if actor_user is not None:
+        # Authorization
+        if actor_token is not None:
+            if req.token != actor_token or _token_is_expired(req.token_expires_at):
+                raise PermissionError("Invalid or expired token")
+        elif actor_user is not None:
             from not_dot_net.backend.workflow_engine import can_user_act
-            if not can_user_act(actor_user, req, wf):
+            if not await can_user_act(actor_user, req, wf):
                 raise PermissionError("User cannot act on this step")
+        else:
+            raise PermissionError("No actor provided")
 
         next_step, new_status = compute_next_step(wf, req.current_step, action)
 
@@ -306,11 +324,16 @@ async def save_draft(
 
         wf = await _get_workflow_config(req.type)
 
-        # Authorization: verify actor can act on this step
-        if actor_user is not None:
+        # Authorization
+        if actor_token is not None:
+            if req.token != actor_token or _token_is_expired(req.token_expires_at):
+                raise PermissionError("Invalid or expired token")
+        elif actor_user is not None:
             from not_dot_net.backend.workflow_engine import can_user_act
-            if not can_user_act(actor_user, req, wf):
+            if not await can_user_act(actor_user, req, wf):
                 raise PermissionError("User cannot act on this step")
+        else:
+            raise PermissionError("No actor provided")
 
         merged = dict(req.data)
         merged.update(data)

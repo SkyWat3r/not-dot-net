@@ -1,3 +1,4 @@
+from html import escape as html_escape
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -78,7 +79,7 @@ def setup():
                 ui.html(f"""
                     <form action="/auth/login" method="post"
                           style="display:flex; flex-direction:column; gap:12px; width:100%;">
-                        <input type="hidden" name="redirect_to" value="{safe_dest}">
+                        <input type="hidden" name="redirect_to" value="{html_escape(safe_dest)}">
                         <label>{t("email")}
                             <input name="username" type="email"
                                    style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">

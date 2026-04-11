@@ -1,4 +1,5 @@
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 
@@ -64,7 +65,7 @@ bearer_transport = BearerTransport(tokenUrl="auth/jwt/login")
 cookie_transport = CookieTransport(
     cookie_name="fastapiusersauth",
     cookie_max_age=3600,
-    cookie_secure=False,
+    cookie_secure="DATABASE_URL" in os.environ,
 )
 
 

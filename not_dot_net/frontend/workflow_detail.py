@@ -7,7 +7,6 @@ from fastapi import Depends
 from nicegui import ui
 
 from not_dot_net.backend.db import User, session_scope
-from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.users import current_active_user_optional
 from not_dot_net.backend.workflow_engine import can_user_act, get_current_step_config
 from not_dot_net.backend.workflow_file_routes import can_view_request
@@ -89,9 +88,7 @@ def setup():
             _render_timeline(events, actor_names, files_by_step)
 
             if step_config and req.status == "in_progress":
-                can_act = can_user_act(user, req, wf)
-                if step_config.assignee_permission:
-                    can_act = can_act and await has_permissions(user, step_config.assignee_permission)
+                can_act = await can_user_act(user, req, wf)
                 if can_act:
                     ui.separator().classes("my-4")
                     action_container = ui.column().classes("w-full")

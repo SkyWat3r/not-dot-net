@@ -120,7 +120,12 @@ async def create_booking(
     resource_id: uuid.UUID, user_id: uuid.UUID,
     start_date: date, end_date: date, note: str = "",
     os_choice: str | None = None, software_tags: list[str] | None = None,
+    actor=None,
 ) -> Booking:
+    if actor is not None:
+        is_manager = await has_permissions(actor, MANAGE_BOOKINGS)
+        if user_id != actor.id and not is_manager:
+            raise PermissionError("Can only create bookings for yourself")
     if start_date >= end_date:
         raise BookingValidationError("End date must be after start date")
     if start_date < date.today():

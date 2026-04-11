@@ -44,6 +44,7 @@ def setup():
             async def handle_submit(data):
                 await submit_step(
                     req.id, actor_id=None, action="submit", data=data,
+                    actor_token=token,
                 )
                 form_container.clear()
                 with form_container:

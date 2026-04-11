@@ -103,33 +103,61 @@ def test_compute_next_step_reject_terminates():
     assert result == (None, "rejected")
 
 
-def test_can_user_act_permission_based_step():
-    """Steps with assignee_permission always return True (service layer checks permissions)."""
+async def _setup_roles():
+    from not_dot_net.backend.roles import roles_config, RolesConfig, RoleDefinition
+    await roles_config.set(RolesConfig(roles={
+        "staff": RoleDefinition(label="Staff", permissions=["create_workflows"]),
+        "director": RoleDefinition(label="Director", permissions=["approve_workflows"]),
+        "member": RoleDefinition(label="Member", permissions=[]),
+        "admin": RoleDefinition(label="Admin", permissions=["create_workflows", "approve_workflows", "manage_roles", "manage_settings"]),
+    }))
+
+
+async def test_can_user_act_permission_granted():
+    """User with the right permission can act on a permission-gated step."""
+    await _setup_roles()
+    user = FakeUser("staff")
+    req = FakeRequest(current_step="form1")
+    assert await can_user_act(user, req, TWO_STEP_WORKFLOW)
+
+
+async def test_can_user_act_permission_denied():
+    """User without the right permission cannot act on a permission-gated step."""
+    await _setup_roles()
     user = FakeUser("member")
     req = FakeRequest(current_step="form1")
-    assert can_user_act(user, req, TWO_STEP_WORKFLOW)
+    assert not await can_user_act(user, req, TWO_STEP_WORKFLOW)
 
 
-def test_can_user_act_permission_based_approval_step():
-    """Approval steps with assignee_permission also return True from engine."""
+async def test_can_user_act_approval_permission_granted():
+    """Director with approve_workflows can act on approval step."""
+    await _setup_roles()
+    user = FakeUser("director")
+    req = FakeRequest(current_step="approve")
+    assert await can_user_act(user, req, TWO_STEP_WORKFLOW)
+
+
+async def test_can_user_act_approval_permission_denied():
+    """Staff without approve_workflows cannot act on approval step."""
+    await _setup_roles()
     user = FakeUser("staff")
     req = FakeRequest(current_step="approve")
-    assert can_user_act(user, req, TWO_STEP_WORKFLOW)
+    assert not await can_user_act(user, req, TWO_STEP_WORKFLOW)
 
 
-def test_can_user_act_target_person():
+async def test_can_user_act_target_person():
     user = FakeUser("member", email="target@test.com")
     req = FakeRequest(current_step="info", target_email="target@test.com")
-    assert can_user_act(user, req, PARTIAL_SAVE_WORKFLOW)
+    assert await can_user_act(user, req, PARTIAL_SAVE_WORKFLOW)
 
 
-def test_can_user_act_wrong_target():
+async def test_can_user_act_wrong_target():
     user = FakeUser("member", email="other@test.com")
     req = FakeRequest(current_step="info", target_email="target@test.com")
-    assert not can_user_act(user, req, PARTIAL_SAVE_WORKFLOW)
+    assert not await can_user_act(user, req, PARTIAL_SAVE_WORKFLOW)
 
 
-def test_can_user_act_requester():
+async def test_can_user_act_requester():
     requester_wf = WorkflowConfig(
         label="Test",
         start_role="staff",
@@ -137,9 +165,9 @@ def test_can_user_act_requester():
     )
     user = FakeUser("member", id="user-42")
     req = FakeRequest(current_step="review", created_by="user-42")
-    assert can_user_act(user, req, requester_wf)
+    assert await can_user_act(user, req, requester_wf)
     other = FakeUser("member", id="user-99")
-    assert not can_user_act(other, req, requester_wf)
+    assert not await can_user_act(other, req, requester_wf)
 
 
 def test_get_available_actions_partial_save_includes_save_draft():

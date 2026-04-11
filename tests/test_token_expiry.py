@@ -10,6 +10,7 @@ from not_dot_net.backend.workflow_service import (
     get_request_by_token,
 )
 from not_dot_net.backend.workflow_models import WorkflowRequest
+from not_dot_net.backend.roles import RoleDefinition, roles_config
 from not_dot_net.backend.db import User, session_scope
 
 
@@ -22,8 +23,18 @@ async def _create_user(email="staff@test.com", role="staff") -> User:
         return user
 
 
+async def _setup_roles():
+    cfg = await roles_config.get()
+    cfg.roles["staff"] = RoleDefinition(label="Staff", permissions=["create_workflows"])
+    cfg.roles["admin"] = RoleDefinition(
+        label="Admin", permissions=["manage_roles", "manage_settings", "create_workflows", "approve_workflows"],
+    )
+    await roles_config.set(cfg)
+
+
 async def test_valid_token_found():
     """A token within its expiry window should be found."""
+    await _setup_roles()
     user = await _create_user()
     req = await create_request(
         workflow_type="onboarding",
@@ -32,7 +43,7 @@ async def test_valid_token_found():
               "role_status": "postdoc", "team": "Plasma Physics", "start_date": "2026-04-01"},
     )
     # Submit the request step to advance to newcomer_info (which generates a token)
-    req = await submit_step(req.id, user.id, "submit", data={})
+    req = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
     assert req.token is not None
 
     found = await get_request_by_token(req.token)
@@ -42,6 +53,7 @@ async def test_valid_token_found():
 
 async def test_expired_token_not_found():
     """An expired token should not be found."""
+    await _setup_roles()
     user = await _create_user()
     req = await create_request(
         workflow_type="onboarding",
@@ -49,7 +61,7 @@ async def test_expired_token_not_found():
         data={"person_name": "Test", "person_email": "test@ext.com",
               "role_status": "postdoc", "team": "Plasma Physics", "start_date": "2026-04-01"},
     )
-    req = await submit_step(req.id, user.id, "submit", data={})
+    req = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
     assert req.token is not None
 
     # Manually expire the token

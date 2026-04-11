@@ -394,6 +394,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                     note=note_input.value,
                     os_choice=os_select.value,
                     software_tags=selected_sw or None,
+                    actor=user,
                 )
             except (BookingConflictError, BookingValidationError) as err:
                 ui.notify(str(err), color="negative")

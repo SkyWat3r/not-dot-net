@@ -1,4 +1,5 @@
-"""Pure-function workflow step machine. No DB, no side effects."""
+"""Pure-function workflow step machine. Mostly pure — can_user_act is async
+because it needs to check DB-backed permissions."""
 
 from not_dot_net.backend.workflow_models import RequestStatus
 from not_dot_net.config import WorkflowConfig, WorkflowStepConfig
@@ -57,23 +58,23 @@ def compute_next_step(
     return (None, RequestStatus.COMPLETED)
 
 
-def can_user_act(user, request, workflow: WorkflowConfig) -> bool:
-    """Check if a user can act on the current step (contextual assignment only).
+async def can_user_act(user, request, workflow: WorkflowConfig) -> bool:
+    """Check if a user can act on the current step."""
+    from not_dot_net.backend.permissions import has_permissions
 
-    Permission-based checks are handled by the service layer.
-    """
     step = get_current_step_config(request, workflow)
     if step is None:
         return False
 
-    # Contextual assignment
     if step.assignee == "target_person":
         return user.email == request.target_email
     if step.assignee == "requester":
         return str(user.id) == str(request.created_by)
-
-    # If step has assignee_permission or assignee_role, the service layer handles it
-    return step.assignee_permission is not None or step.assignee_role is not None
+    if step.assignee_permission:
+        return await has_permissions(user, step.assignee_permission)
+    if step.assignee_role:
+        return user.role == step.assignee_role
+    return False
 
 
 def get_completion_status(
