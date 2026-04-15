@@ -86,8 +86,8 @@ async def notify(
     mail_settings,
     get_user_email,
     get_users_by_role,
-    base_url: str = "http://localhost:8088",
 ) -> list[str]:
+    base_url = mail_settings.base_url.rstrip("/")
     """Fire notifications for a workflow event. Returns list of emails sent to."""
     from not_dot_net.backend.mail import send_mail
 

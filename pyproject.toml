@@ -40,6 +40,7 @@ dependencies = [
     "pydantic",
     "fastapi-users[sqlalchemy]",
     "aiosqlite",
+    "asyncpg",
     "passlib",
     "aiosmtplib",
     "pyyaml",

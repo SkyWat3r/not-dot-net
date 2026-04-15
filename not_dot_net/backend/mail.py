@@ -18,6 +18,7 @@ class MailConfig(BaseModel):
     smtp_user: str = ""
     smtp_password: str = ""
     from_address: str = "noreply@not-dot-net.dev"
+    base_url: str = "http://localhost:8088"
     dev_mode: bool = True
     dev_catch_all: str = ""
 
