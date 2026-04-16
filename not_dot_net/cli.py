@@ -12,11 +12,18 @@ def serve(
     host: str = "localhost",
     port: int = 8088,
     secrets_file: str = "./secrets.key",
+    ssl_certfile: str | None = None,
+    ssl_keyfile: str | None = None,
     seed_fake_users: bool = False,
 ):
     """Serve the NotDotNet application."""
     from not_dot_net.app import main
-    main(host, port, secrets_file, seed_fake_users=seed_fake_users)
+    main(
+        host, port, secrets_file,
+        ssl_certfile=ssl_certfile,
+        ssl_keyfile=ssl_keyfile,
+        seed_fake_users=seed_fake_users,
+    )
 
 
 @app.command

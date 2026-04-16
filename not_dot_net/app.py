@@ -96,14 +96,20 @@ def main(
     host: str = "localhost",
     port: int = 8088,
     secrets_file: str = "./secrets.key",
+    ssl_certfile: str | None = None,
+    ssl_keyfile: str | None = None,
     seed_fake_users: bool = False,
 ) -> None:
     create_app(secrets_file, _seed_fake_users=seed_fake_users)
     from not_dot_net.backend.secrets import read_secrets_file
     secrets = read_secrets_file(Path(secrets_file))
+    ssl_kwargs = {}
+    if ssl_certfile and ssl_keyfile:
+        ssl_kwargs = {"ssl_certfile": ssl_certfile, "ssl_keyfile": ssl_keyfile}
     ui.run(
         storage_secret=secrets.storage_secret,
         host=host, port=port, reload=False, title="NotDotNet",
+        **ssl_kwargs,
     )
 
 
