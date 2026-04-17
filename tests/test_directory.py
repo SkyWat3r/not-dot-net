@@ -92,3 +92,34 @@ def test_compute_update_diff_treats_empty_string_as_none():
 
 def test_compute_update_diff_no_changes_returns_empty():
     assert compute_update_diff({"phone": "+33111"}, {"phone": "+33111"}) == {}
+
+
+async def test_self_edit_phone_writes_to_ad_and_local_db():
+    from not_dot_net.backend.db import User, AuthMethod, session_scope
+    from not_dot_net.backend.auth.ldap import (
+        ldap_config, set_ldap_connect, ldap_modify_user,
+    )
+    from tests.test_ldap_modify import _make_mutable_fake, LDAP_CFG, USER_DN
+
+    fake_connect, ad_state = _make_mutable_fake({"telephoneNumber": "+33OLD"})
+    await ldap_config.set(LDAP_CFG)
+    set_ldap_connect(fake_connect)
+
+    async with session_scope() as session:
+        user = User(
+            email="jdoe@example.com", hashed_password="x", is_active=True,
+            auth_method=AuthMethod.LDAP,
+            ldap_dn=USER_DN,
+            phone="+33OLD",
+        )
+        session.add(user)
+        await session.commit()
+
+    cfg = await ldap_config.get()
+    ldap_modify_user(
+        dn=USER_DN,
+        changes={"telephoneNumber": "+33NEW"},
+        bind_username="jdoe", bind_password="secret",
+        ldap_cfg=cfg, connect=fake_connect,
+    )
+    assert ad_state["telephoneNumber"] == "+33NEW"
