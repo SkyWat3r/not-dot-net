@@ -4,7 +4,7 @@ from datetime import date
 from nicegui import ui
 from sqlalchemy import select
 
-from not_dot_net.backend.db import User, session_scope, get_user_db
+from not_dot_net.backend.db import User, AuthMethod, session_scope, get_user_db
 from not_dot_net.backend.schemas import UserUpdate
 from not_dot_net.backend.users import get_user_manager
 from not_dot_net.frontend.i18n import t
@@ -28,6 +28,16 @@ def classify_updates(updates: dict) -> tuple[dict[str, str | None], dict]:
         else:
             local_updates[field] = value
     return ad_changes, local_updates
+
+
+def compute_update_diff(current: dict, submitted: dict) -> dict:
+    """Return only fields whose submitted value differs from current. Empty strings -> None."""
+    out: dict = {}
+    for k, raw in submitted.items():
+        new_val = raw if raw not in ("", None) else None
+        if new_val != current.get(k):
+            out[k] = new_val
+    return out
 
 
 async def _load_people() -> list[User]:
@@ -237,17 +247,32 @@ async def _render_edit(container, person: User, current_user: User, state: dict)
         ).props("outlined dense")
 
         async def save():
-            updates = {}
+            submitted = {}
             for k, v in fields.items():
                 val = v.value or None
                 if k in ("start_date", "end_date") and val:
                     val = date.fromisoformat(val)
-                updates[k] = val
-            await _update_user(person.id, updates)
-            ui.notify(t("saved"), color="positive")
-            people = await _load_people()
-            updated = next((p for p in people if p.id == person.id), person)
-            await _render_detail(container, updated, current_user, state)
+                submitted[k] = val
+
+            current = {k: getattr(person, k) for k in submitted}
+            diff = compute_update_diff(current, submitted)
+            if not diff:
+                ui.notify(t("saved"), color="positive")
+                return
+
+            ad_changes, local_updates = classify_updates(diff)
+            needs_ad_write = bool(ad_changes) and person.auth_method == AuthMethod.LDAP
+
+            if not needs_ad_write:
+                await _update_user(person.id, diff)
+                await _finish_save(container, person, current_user, state)
+                return
+
+            is_own = person.id == current_user.id
+            await _prompt_ad_credentials_and_save(
+                container, person, current_user, state,
+                diff, ad_changes, local_updates, is_own=is_own,
+            )
 
         with ui.row():
             ui.button(t("save"), on_click=save).props("flat dense color=primary")
@@ -256,3 +281,61 @@ async def _render_edit(container, person: User, current_user: User, state: dict)
                 await _render_detail(container, person, current_user, state)
 
             ui.button(t("cancel"), on_click=do_cancel).props("flat dense")
+
+
+async def _finish_save(container, person, current_user, state):
+    ui.notify(t("saved"), color="positive")
+    people = await _load_people()
+    updated = next((p for p in people if p.id == person.id), person)
+    await _render_detail(container, updated, current_user, state)
+
+
+async def _prompt_ad_credentials_and_save(
+    container, person, current_user, state,
+    diff, ad_changes, local_updates, *, is_own,
+):
+    from not_dot_net.backend.auth.ldap import (
+        ldap_config, get_ldap_connect, ldap_modify_user, LdapModifyError,
+    )
+
+    dialog = ui.dialog()
+    with dialog, ui.card():
+        if is_own:
+            ui.label(t("confirm_password_to_save_ad"))
+            username_input = None
+            password_input = ui.input(t("password"), password=True).props("outlined dense")
+        else:
+            ui.label(t("admin_ad_credentials"))
+            username_input = ui.input(t("ad_admin_username")).props("outlined dense")
+            password_input = ui.input(t("password"), password=True).props("outlined dense")
+        error_label = ui.label("").classes("text-negative")
+
+        async def submit():
+            bind_user = (current_user.email.split("@")[0] if is_own else username_input.value)
+            if not bind_user or not password_input.value:
+                return
+            cfg = await ldap_config.get()
+            try:
+                ldap_modify_user(
+                    dn=person.ldap_dn,
+                    changes=ad_changes,
+                    bind_username=bind_user,
+                    bind_password=password_input.value,
+                    ldap_cfg=cfg,
+                    connect=get_ldap_connect(),
+                )
+            except LdapModifyError as e:
+                msg = str(e)
+                error_label.set_text(
+                    t("ad_bind_failed") if "bind" in msg.lower() else t("ad_write_failed", error=msg)
+                )
+                return
+            await _update_user(person.id, diff)
+            dialog.close()
+            await _finish_save(container, person, current_user, state)
+
+        with ui.row():
+            ui.button(t("save"), on_click=submit).props("flat color=primary")
+            ui.button(t("cancel"), on_click=dialog.close).props("flat")
+
+    dialog.open()

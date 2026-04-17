@@ -73,3 +73,22 @@ def test_self_editable_ad_fields_map_to_valid_ad_attributes():
     from not_dot_net.backend.auth.ldap import AD_ATTR_MAP
     for f in SELF_EDITABLE_AD_FIELDS:
         assert f in AD_ATTR_MAP
+
+
+from not_dot_net.frontend.directory import compute_update_diff
+
+
+def test_compute_update_diff_returns_only_changed():
+    current = {"phone": "+33111", "office": "A"}
+    submitted = {"phone": "+33222", "office": "A"}
+    assert compute_update_diff(current, submitted) == {"phone": "+33222"}
+
+
+def test_compute_update_diff_treats_empty_string_as_none():
+    current = {"phone": "+33111"}
+    submitted = {"phone": ""}
+    assert compute_update_diff(current, submitted) == {"phone": None}
+
+
+def test_compute_update_diff_no_changes_returns_empty():
+    assert compute_update_diff({"phone": "+33111"}, {"phone": "+33111"}) == {}
