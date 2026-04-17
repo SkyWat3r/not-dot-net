@@ -34,7 +34,8 @@ def _make_fake_connect(users: dict):
                 "userPassword": attrs["password"],
                 "objectClass": "person",
             }
-            for attr in ("mail", "displayName", "givenName", "sn"):
+            for attr in ("mail", "displayName", "givenName", "sn",
+                         "telephoneNumber", "physicalDeliveryOfficeName", "title", "department"):
                 if attrs.get(attr):
                     entry_attrs[attr] = attrs[attr]
             conn.strategy.add_entry(f"cn={uid},ou=users,{ldap_cfg.base_dn}", entry_attrs)
@@ -48,6 +49,7 @@ def _make_fake_connect(users: dict):
 async def test_provision_ldap_user_creates_user():
     info = LdapUserInfo(
         email="ad.user@example.com",
+        dn="cn=ad.user,dc=example,dc=com",
         full_name="AD User",
         given_name="AD",
         surname="User",
@@ -62,7 +64,7 @@ async def test_provision_ldap_user_creates_user():
 
 
 async def test_provision_sets_empty_role_when_no_default():
-    info = LdapUserInfo(email="norole@example.com", full_name="No Role")
+    info = LdapUserInfo(email="norole@example.com", dn="cn=norole,dc=example,dc=com", full_name="No Role")
     user = await provision_ldap_user(info, default_role="")
     assert user.role == ""
 

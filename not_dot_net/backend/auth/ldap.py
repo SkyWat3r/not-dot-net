@@ -15,7 +15,17 @@ from not_dot_net.backend.app_config import section
 
 logger = logging.getLogger("not_dot_net.ldap")
 
-_AD_ATTRIBUTES = ["mail", "displayName", "givenName", "sn"]
+AD_ATTR_MAP: dict[str, str] = {
+    # local field  -> AD attribute
+    "email":      "mail",
+    "full_name":  "displayName",
+    "phone":      "telephoneNumber",
+    "office":     "physicalDeliveryOfficeName",
+    "title":      "title",
+    "team":       "department",
+}
+
+_AD_ATTRIBUTES = list(AD_ATTR_MAP.values()) + ["givenName", "sn"]
 
 
 class TlsMode(str, Enum):
@@ -44,9 +54,14 @@ USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
 @dataclass(frozen=True)
 class LdapUserInfo:
     email: str
+    dn: str
     full_name: str | None = None
     given_name: str | None = None
     surname: str | None = None
+    phone: str | None = None
+    office: str | None = None
+    title: str | None = None
+    department: str | None = None
 
 
 def _build_tls(ldap_cfg: LdapConfig) -> Tls | None:
@@ -112,9 +127,14 @@ def ldap_authenticate(
             return None
         return LdapUserInfo(
             email=email,
+            dn=entry.entry_dn,
             full_name=_attr_value(entry, "displayName"),
             given_name=_attr_value(entry, "givenName"),
             surname=_attr_value(entry, "sn"),
+            phone=_attr_value(entry, "telephoneNumber"),
+            office=_attr_value(entry, "physicalDeliveryOfficeName"),
+            title=_attr_value(entry, "title"),
+            department=_attr_value(entry, "department"),
         )
     finally:
         conn.unbind()
