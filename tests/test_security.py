@@ -19,11 +19,26 @@ class TestOpenRedirect:
     def test_scheme_with_netloc_rejected(self):
         assert _safe_redirect("http://evil.com/path") == "/"
 
-    def test_empty_string_allowed(self):
-        assert _safe_redirect("") == ""
+    def test_empty_string_rejected(self):
+        assert _safe_redirect("") == "/"
 
     def test_path_with_query_allowed(self):
         assert _safe_redirect("/page?foo=bar") == "/page?foo=bar"
+
+    def test_triple_slash_rejected(self):
+        assert _safe_redirect("///evil.com") == "/"
+
+    def test_backslash_rejected(self):
+        assert _safe_redirect("/\\evil.com") == "/"
+
+    def test_no_leading_slash_rejected(self):
+        assert _safe_redirect("evil.com") == "/"
+
+    def test_javascript_scheme_rejected(self):
+        assert _safe_redirect("javascript:alert(1)") == "/"
+
+    def test_data_scheme_rejected(self):
+        assert _safe_redirect("data:text/html,hi") == "/"
 
 
 class TestAuditResolveNames:
