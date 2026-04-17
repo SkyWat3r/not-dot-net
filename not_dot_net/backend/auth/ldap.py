@@ -194,6 +194,33 @@ def ldap_modify_user(
         conn.unbind()
 
 
+# LdapUserInfo field name -> User model field name
+_INFO_TO_USER: dict[str, str] = {
+    "email":      "email",
+    "full_name":  "full_name",
+    "phone":      "phone",
+    "office":     "office",
+    "title":      "title",
+    "department": "team",
+}
+
+
+async def sync_user_from_ldap(user_id: uuid.UUID, info: LdapUserInfo) -> None:
+    """Overwrite the AD-backed fields of a local user from a freshly-read AD entry.
+
+    Local-only fields (employment_status, start_date, end_date) are untouched.
+    """
+    from not_dot_net.backend.db import User, session_scope
+
+    async with session_scope() as session:
+        user = await session.get(User, user_id)
+        if user is None:
+            return
+        for info_field, user_field in _INFO_TO_USER.items():
+            setattr(user, user_field, getattr(info, info_field))
+        await session.commit()
+
+
 async def provision_ldap_user(user_info: LdapUserInfo, default_role: str) -> "User":
     """Create a local user from AD attributes. Returns the new User."""
     from not_dot_net.backend.db import User, AuthMethod, session_scope, get_user_db
