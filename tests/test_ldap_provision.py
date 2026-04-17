@@ -34,7 +34,8 @@ def _make_fake_connect(users: dict):
                 "userPassword": attrs["password"],
                 "objectClass": "person",
             }
-            for attr in ("mail", "displayName", "givenName", "sn"):
+            for attr in ("mail", "displayName", "givenName", "sn",
+                         "telephoneNumber", "physicalDeliveryOfficeName", "title", "department"):
                 if attrs.get(attr):
                     entry_attrs[attr] = attrs[attr]
             conn.strategy.add_entry(f"cn={uid},ou=users,{ldap_cfg.base_dn}", entry_attrs)
@@ -48,6 +49,7 @@ def _make_fake_connect(users: dict):
 async def test_provision_ldap_user_creates_user():
     info = LdapUserInfo(
         email="ad.user@example.com",
+        dn="cn=ad.user,dc=example,dc=com",
         full_name="AD User",
         given_name="AD",
         surname="User",
@@ -62,7 +64,7 @@ async def test_provision_ldap_user_creates_user():
 
 
 async def test_provision_sets_empty_role_when_no_default():
-    info = LdapUserInfo(email="norole@example.com", full_name="No Role")
+    info = LdapUserInfo(email="norole@example.com", dn="cn=norole,dc=example,dc=com", full_name="No Role")
     user = await provision_ldap_user(info, default_role="")
     assert user.role == ""
 
@@ -152,3 +154,47 @@ async def test_try_ldap_auto_provision_off():
 
     user = await _try_ldap_auth("noprov", "pass")
     assert user is None
+
+
+async def test_provision_stores_dn():
+    from not_dot_net.backend.auth.ldap import provision_ldap_user, LdapUserInfo
+    info = LdapUserInfo(email="provision-dn@example.com", dn="cn=provision-dn,dc=example,dc=com")
+    user = await provision_ldap_user(info, default_role="member")
+    assert user.ldap_dn == "cn=provision-dn,dc=example,dc=com"
+
+
+async def test_existing_ldap_user_gets_resynced_on_login():
+    fake_users = {
+        "jdoe": {
+            "mail": "jdoe@example.com",
+            "displayName": "John Doe",
+            "givenName": "John", "sn": "Doe",
+            "telephoneNumber": "+33NEW", "physicalDeliveryOfficeName": "Room 101",
+            "title": "Researcher", "department": "Plasma",
+            "password": "secret",
+        },
+    }
+    await ldap_config.set(LDAP_CFG)
+    set_ldap_connect(_make_fake_connect(fake_users))
+
+    # Pre-seed a local user with stale data
+    async with session_scope() as session:
+        user = User(
+            email="jdoe@example.com", hashed_password="x", is_active=True,
+            auth_method=AuthMethod.LDAP, phone="+33OLD", office="Old Room",
+            employment_status="Permanent",
+        )
+        session.add(user)
+        await session.commit()
+        user_id = user.id
+
+    user = await _try_ldap_auth("jdoe", "secret")
+    assert user is not None
+    assert user.phone == "+33NEW"
+    assert user.office == "Room 101"
+    assert user.title == "Researcher"
+    assert user.team == "Plasma"
+
+    async with session_scope() as session:
+        refreshed = await session.get(User, user_id)
+        assert refreshed.employment_status == "Permanent"  # preserved

@@ -6,7 +6,17 @@ from not_dot_net.backend.auth.ldap import ldap_authenticate, LdapConfig, LdapUse
 LDAP_CFG = LdapConfig(url="fake", domain="example.com", base_dn="dc=example,dc=com")
 
 FAKE_USERS = {
-    "jdoe": {"mail": "jdoe@example.com", "displayName": "John Doe", "givenName": "John", "sn": "Doe", "password": "secret"},
+    "jdoe": {
+        "mail": "jdoe@example.com",
+        "displayName": "John Doe",
+        "givenName": "John",
+        "sn": "Doe",
+        "telephoneNumber": "+33123456789",
+        "physicalDeliveryOfficeName": "Room 101",
+        "title": "Researcher",
+        "department": "Plasma",
+        "password": "secret",
+    },
     "nomail": {"mail": None, "displayName": "No Mail", "givenName": "No", "sn": "Mail", "password": "secret"},
 }
 
@@ -22,7 +32,8 @@ def fake_ldap_connect(ldap_cfg: LdapConfig, username: str, password: str) -> Con
             "userPassword": attrs["password"],
             "objectClass": "person",
         }
-        for attr in ("mail", "displayName", "givenName", "sn"):
+        for attr in ("mail", "displayName", "givenName", "sn",
+                     "telephoneNumber", "physicalDeliveryOfficeName", "title", "department"):
             if attrs.get(attr):
                 entry_attrs[attr] = attrs[attr]
         conn.strategy.add_entry(f"cn={uid},ou=users,{ldap_cfg.base_dn}", entry_attrs)
@@ -58,3 +69,13 @@ def test_unknown_user_returns_none():
 def test_user_without_mail_returns_none():
     result = ldap_authenticate("nomail", "secret", LDAP_CFG, connect=fake_ldap_connect)
     assert result is None
+
+
+def test_authentication_returns_dn_and_extended_attrs():
+    result = ldap_authenticate("jdoe", "secret", LDAP_CFG, connect=fake_ldap_connect)
+    assert result is not None
+    assert result.dn == "cn=jdoe,ou=users,dc=example,dc=com"
+    assert result.phone == "+33123456789"
+    assert result.office == "Room 101"
+    assert result.title == "Researcher"
+    assert result.department == "Plasma"

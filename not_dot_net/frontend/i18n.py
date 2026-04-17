@@ -33,6 +33,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "saved": "Saved",
         "confirm_delete": "Delete {name}?",
         "deleted": "Deleted {name}",
+        "confirm_password_to_save_ad": "Enter your password to save changes to Active Directory",
+        "admin_ad_credentials": "Provide AD admin credentials",
+        "ad_admin_username": "AD admin username",
+        "ad_write_failed": "Active Directory update failed: {error}",
+        "ad_bind_failed": "Incorrect password — try again",
         # Common
         "name": "Name",
         "submit": "Submit",
@@ -183,6 +188,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "saved": "Enregistré",
         "confirm_delete": "Supprimer {name}\u202f?",
         "deleted": "{name} supprimé",
+        "confirm_password_to_save_ad": "Entrez votre mot de passe pour enregistrer les modifications dans l'Active Directory",
+        "admin_ad_credentials": "Fournissez les identifiants administrateur AD",
+        "ad_admin_username": "Nom d'utilisateur administrateur AD",
+        "ad_write_failed": "Échec de la mise à jour de l'Active Directory : {error}",
+        "ad_bind_failed": "Mot de passe incorrect — réessayez",
         # Common
         "name": "Nom",
         "submit": "Envoyer",

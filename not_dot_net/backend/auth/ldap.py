@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
-from ldap3 import Server, Connection, ALL, Tls
+from ldap3 import Server, Connection, ALL, Tls, MODIFY_REPLACE
 from ldap3.core.exceptions import LDAPBindError, LDAPException
 from ldap3.utils.conv import escape_filter_chars
 from pydantic import BaseModel
@@ -15,7 +15,17 @@ from not_dot_net.backend.app_config import section
 
 logger = logging.getLogger("not_dot_net.ldap")
 
-_AD_ATTRIBUTES = ["mail", "displayName", "givenName", "sn"]
+AD_ATTR_MAP: dict[str, str] = {
+    # local field  -> AD attribute
+    "email":      "mail",
+    "full_name":  "displayName",
+    "phone":      "telephoneNumber",
+    "office":     "physicalDeliveryOfficeName",
+    "title":      "title",
+    "team":       "department",
+}
+
+_AD_ATTRIBUTES = list(AD_ATTR_MAP.values()) + ["givenName", "sn"]
 
 
 class TlsMode(str, Enum):
@@ -44,9 +54,14 @@ USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
 @dataclass(frozen=True)
 class LdapUserInfo:
     email: str
+    dn: str
     full_name: str | None = None
     given_name: str | None = None
     surname: str | None = None
+    phone: str | None = None
+    office: str | None = None
+    title: str | None = None
+    department: str | None = None
 
 
 def _build_tls(ldap_cfg: LdapConfig) -> Tls | None:
@@ -112,9 +127,14 @@ def ldap_authenticate(
             return None
         return LdapUserInfo(
             email=email,
+            dn=entry.entry_dn,
             full_name=_attr_value(entry, "displayName"),
             given_name=_attr_value(entry, "givenName"),
             surname=_attr_value(entry, "sn"),
+            phone=_attr_value(entry, "telephoneNumber"),
+            office=_attr_value(entry, "physicalDeliveryOfficeName"),
+            title=_attr_value(entry, "title"),
+            department=_attr_value(entry, "department"),
         )
     finally:
         conn.unbind()
@@ -131,6 +151,75 @@ def set_ldap_connect(fn: Callable[..., Connection]) -> None:
 
 def get_ldap_connect() -> Callable[..., Connection]:
     return _ldap_connect
+
+
+class LdapModifyError(Exception):
+    """Raised when an AD modify fails (bind, permissions, or server error)."""
+
+
+def ldap_modify_user(
+    dn: str,
+    changes: dict[str, str | None],
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> None:
+    """Bind as bind_username and replace attributes on dn.
+
+    `changes` maps AD attribute name to new value. `None` clears the attribute.
+    Raises LdapModifyError on bind failure, insufficient rights, or server error.
+    """
+    if not changes:
+        return
+    try:
+        conn = connect(ldap_cfg, bind_username, bind_password)
+    except LDAPBindError as e:
+        raise LdapModifyError(f"LDAP bind failed: {e}") from e
+    except LDAPException as e:
+        raise LdapModifyError(f"LDAP connection error: {e}") from e
+
+    try:
+        modify_payload = {
+            attr: [(MODIFY_REPLACE, [value] if value else [])]
+            for attr, value in changes.items()
+        }
+        ok = conn.modify(dn, modify_payload)
+        if not ok:
+            raise LdapModifyError(
+                f"modify failed: {conn.result.get('description')} "
+                f"({conn.result.get('message')})"
+            )
+    finally:
+        conn.unbind()
+
+
+# LdapUserInfo field name -> User model field name
+_INFO_TO_USER: dict[str, str] = {
+    "email":      "email",
+    "full_name":  "full_name",
+    "phone":      "phone",
+    "office":     "office",
+    "title":      "title",
+    "department": "team",
+}
+
+
+async def sync_user_from_ldap(user_id: uuid.UUID, info: LdapUserInfo) -> None:
+    """Overwrite the AD-backed fields of a local user from a freshly-read AD entry.
+
+    Local-only fields (employment_status, start_date, end_date) are untouched.
+    """
+    from not_dot_net.backend.db import User, session_scope
+
+    async with session_scope() as session:
+        user = await session.get(User, user_id)
+        if user is None:
+            return
+        for info_field, user_field in _INFO_TO_USER.items():
+            setattr(user, user_field, getattr(info, info_field))
+        user.ldap_dn = info.dn
+        await session.commit()
 
 
 async def provision_ldap_user(user_info: LdapUserInfo, default_role: str) -> "User":
@@ -152,6 +241,7 @@ async def provision_ldap_user(user_info: LdapUserInfo, default_role: str) -> "Us
                 )
                 user.auth_method = AuthMethod.LDAP
                 user.full_name = user_info.full_name
+                user.ldap_dn = user_info.dn
                 user.role = default_role
                 session.add(user)
                 await session.commit()

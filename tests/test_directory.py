@@ -28,3 +28,98 @@ async def test_directory_shows_search(user: User) -> None:
     user.http_client.cookies.set("fastapiusersauth", token)
     await user.open("/")
     await user.should_see("Search")
+
+
+from not_dot_net.frontend.directory import classify_updates
+
+
+def test_classify_updates_splits_ad_and_local_fields():
+    updates = {
+        "phone": "+33999",
+        "office": "New",
+        "employment_status": "Contractor",
+        "start_date": None,
+    }
+    ad_changes, local_updates = classify_updates(updates)
+    assert ad_changes == {
+        "telephoneNumber": "+33999",
+        "physicalDeliveryOfficeName": "New",
+    }
+    assert local_updates == {
+        "employment_status": "Contractor",
+        "start_date": None,
+    }
+
+
+def test_classify_updates_ignores_unmapped_fields():
+    ad_changes, local_updates = classify_updates({"unknown": "x"})
+    assert ad_changes == {}
+    assert local_updates == {"unknown": "x"}
+
+
+def test_classify_updates_empty_input():
+    assert classify_updates({}) == ({}, {})
+
+
+SELF_EDITABLE_AD_FIELDS = {"phone", "office"}
+ADMIN_EDITABLE_AD_FIELDS = {"phone", "office", "full_name", "title", "team", "email"}
+
+
+def test_self_editable_ad_fields_are_subset_of_admin_editable():
+    assert SELF_EDITABLE_AD_FIELDS.issubset(ADMIN_EDITABLE_AD_FIELDS)
+
+
+def test_self_editable_ad_fields_map_to_valid_ad_attributes():
+    from not_dot_net.backend.auth.ldap import AD_ATTR_MAP
+    for f in SELF_EDITABLE_AD_FIELDS:
+        assert f in AD_ATTR_MAP
+
+
+from not_dot_net.frontend.directory import compute_update_diff
+
+
+def test_compute_update_diff_returns_only_changed():
+    current = {"phone": "+33111", "office": "A"}
+    submitted = {"phone": "+33222", "office": "A"}
+    assert compute_update_diff(current, submitted) == {"phone": "+33222"}
+
+
+def test_compute_update_diff_treats_empty_string_as_none():
+    current = {"phone": "+33111"}
+    submitted = {"phone": ""}
+    assert compute_update_diff(current, submitted) == {"phone": None}
+
+
+def test_compute_update_diff_no_changes_returns_empty():
+    assert compute_update_diff({"phone": "+33111"}, {"phone": "+33111"}) == {}
+
+
+async def test_self_edit_phone_writes_to_ad_and_local_db():
+    from not_dot_net.backend.db import User, AuthMethod, session_scope
+    from not_dot_net.backend.auth.ldap import (
+        ldap_config, set_ldap_connect, ldap_modify_user,
+    )
+    from tests.test_ldap_modify import _make_mutable_fake, LDAP_CFG, USER_DN
+
+    fake_connect, ad_state = _make_mutable_fake({"telephoneNumber": "+33OLD"})
+    await ldap_config.set(LDAP_CFG)
+    set_ldap_connect(fake_connect)
+
+    async with session_scope() as session:
+        user = User(
+            email="jdoe@example.com", hashed_password="x", is_active=True,
+            auth_method=AuthMethod.LDAP,
+            ldap_dn=USER_DN,
+            phone="+33OLD",
+        )
+        session.add(user)
+        await session.commit()
+
+    cfg = await ldap_config.get()
+    ldap_modify_user(
+        dn=USER_DN,
+        changes={"telephoneNumber": "+33NEW"},
+        bind_username="jdoe", bind_password="secret",
+        ldap_cfg=cfg, connect=fake_connect,
+    )
+    assert ad_state["telephoneNumber"] == "+33NEW"
