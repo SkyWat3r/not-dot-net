@@ -27,6 +27,30 @@ def serve(
 
 
 @app.command
+def migrate(
+    revision: str = "head",
+):
+    """Run database migrations to the given revision."""
+    from not_dot_net.backend.migrate import run_upgrade
+    database_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
+    run_upgrade(database_url, revision)
+    print(f"Migrated to {revision}.")
+
+
+@app.command
+def stamp(
+    revision: str = "head",
+):
+    """Stamp the database with a migration revision without running it."""
+    from not_dot_net.backend.migrate import stamp_head, _alembic_config
+    from alembic import command
+    database_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
+    cfg = _alembic_config(database_url)
+    command.stamp(cfg, revision)
+    print(f"Stamped at {revision}.")
+
+
+@app.command
 def create_user(
     username: str,
     password: str,

@@ -44,6 +44,7 @@ dependencies = [
     "passlib",
     "aiosmtplib",
     "pyyaml",
+    "alembic",
 ]
 
 

@@ -5,6 +5,7 @@ from pathlib import Path
 from nicegui import app, ui
 
 from not_dot_net.backend.db import init_db, create_db_and_tables
+from not_dot_net.backend.migrate import run_upgrade
 from not_dot_net.backend.secrets import load_or_create
 from not_dot_net.backend.users import init_user_secrets, ensure_default_admin
 import not_dot_net.backend.auth.ldap  # noqa: F401 — register LdapConfig section
@@ -39,7 +40,10 @@ def create_app(
     init_user_secrets(secrets)
 
     async def startup():
-        await create_db_and_tables()
+        if dev_mode:
+            await create_db_and_tables()
+        else:
+            run_upgrade(database_url)
         from not_dot_net.backend.roles import seed_admin_permissions
         await seed_admin_permissions()
         if dev_mode:
