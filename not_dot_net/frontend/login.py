@@ -86,11 +86,14 @@ async def _try_ldap_auth(username: str, password: str):
             return None
         from not_dot_net.backend.db import AuthMethod
         if user.auth_method == AuthMethod.LOCAL:
-            logger.warning(
-                "LDAP user '%s' blocked — email collides with local account %s",
+            logger.info(
+                "Upgrading local account '%s' (%s) to LDAP — AD auth succeeded",
                 user_info.email, user.id,
             )
-            return None
+            async with session_scope() as session:
+                db_user = await session.get(User, user.id)
+                db_user.auth_method = AuthMethod.LDAP
+                await session.commit()
         await sync_user_from_ldap(user.id, user_info)
         async with session_scope() as session:
             return await session.get(User, user.id)

@@ -87,12 +87,15 @@ class TestNoPublicRestApi:
 class TestEmailCollision:
     """LDAP auth must not hijack a local account that shares the same email."""
 
-    async def test_ldap_login_blocked_when_local_account_exists(self):
+    async def test_ldap_login_upgrades_local_account(self):
+        """When AD auth succeeds for an email matching a LOCAL account,
+        upgrade auth_method to LDAP (the user proved AD ownership) but
+        preserve the existing role — no escalation."""
         from contextlib import asynccontextmanager
         from not_dot_net.backend.auth.ldap import (
             LdapConfig, ldap_config, set_ldap_connect,
         )
-        from not_dot_net.backend.db import AuthMethod, session_scope, get_user_db
+        from not_dot_net.backend.db import AuthMethod, User, session_scope, get_user_db
         from not_dot_net.backend.users import get_user_manager
         from not_dot_net.backend.schemas import UserCreate
         from not_dot_net.frontend.login import _try_ldap_auth
@@ -108,6 +111,7 @@ class TestEmailCollision:
                     user.auth_method = AuthMethod.LOCAL
                     session.add(user)
                     await session.commit()
+                    user_id = user.id
 
         fake_users = {
             "admin": {
@@ -121,7 +125,13 @@ class TestEmailCollision:
         set_ldap_connect(_make_fake_connect(fake_users))
 
         result = await _try_ldap_auth("admin", "ldappass")
-        assert result is None
+        assert result is not None
+        assert result.id == user_id
+        assert result.role == "admin"
+
+        async with session_scope() as session:
+            refreshed = await session.get(User, user_id)
+            assert refreshed.auth_method == AuthMethod.LDAP
 
     async def test_ldap_login_allowed_for_existing_ldap_account(self):
         from not_dot_net.backend.auth.ldap import (
