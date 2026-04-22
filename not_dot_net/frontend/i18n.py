@@ -159,6 +159,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "request_detail": "Request Detail",
         "view_detail": "View Detail",
         "age": "Age",
+        # Import/Export
+        "import_export": "Import / Export",
+        "import_export_help": "Export pages and bookable resources as JSON, or import from a file.",
+        "export_all": "Export All",
+        "import_file": "Import JSON file",
+        "import_replace": "Update existing entries",
+        "import_replace_help": "When enabled, existing pages (by slug) and resources (by name) are updated. When disabled, they are skipped.",
+        "import_invalid_json": "Invalid JSON file",
     },
     "fr": {
         # Shell / nav
@@ -314,6 +322,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "request_detail": "Détail de la demande",
         "view_detail": "Voir le détail",
         "age": "Ancienneté",
+        # Import/Export
+        "import_export": "Import / Export",
+        "import_export_help": "Exporter les pages et ressources réservables en JSON, ou importer depuis un fichier.",
+        "export_all": "Tout exporter",
+        "import_file": "Importer un fichier JSON",
+        "import_replace": "Mettre à jour les entrées existantes",
+        "import_replace_help": "Si activé, les pages (par slug) et ressources (par nom) existantes sont mises à jour. Sinon, elles sont ignorées.",
+        "import_invalid_json": "Fichier JSON invalide",
     },
 }
 

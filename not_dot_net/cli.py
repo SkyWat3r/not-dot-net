@@ -142,6 +142,32 @@ async def _test_ldap(username: str, password: str):
 
 
 @app.command
+def drop_user(user: str):
+    """Delete a single non-admin user (match by email, name, or substring)."""
+    asyncio.run(_drop_single_user(user))
+
+
+async def _drop_single_user(query: str):
+    from not_dot_net.backend.db import init_db, session_scope
+
+    database_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
+    init_db(database_url)
+
+    async with session_scope() as session:
+        user = await _find_user(session, query)
+        if not user:
+            print(f"Error: no user matching '{query}'.")
+            raise SystemExit(1)
+        if user.role == "admin":
+            print(f"Refusing to delete admin '{user.email}'.")
+            raise SystemExit(1)
+        email, name = user.email, user.full_name or "-"
+        await session.delete(user)
+        await session.commit()
+        print(f"Deleted '{email}' ({name}).")
+
+
+@app.command
 def drop_users():
     """Delete all non-admin users from the database."""
     asyncio.run(_drop_users())

@@ -1,5 +1,6 @@
 """Admin settings page — auto-generated forms from config registry."""
 
+import json
 from enum import Enum
 
 from nicegui import ui
@@ -8,6 +9,7 @@ from yaml import safe_dump, safe_load
 
 from not_dot_net.backend.app_config import get_registry
 from not_dot_net.backend.audit import log_audit
+from not_dot_net.backend.data_io import export_all, import_all
 from not_dot_net.frontend.admin_roles import render as render_roles
 from not_dot_net.frontend.i18n import t
 
@@ -34,6 +36,9 @@ async def render(user):
 
     with ui.expansion("Roles", icon="admin_panel_settings").classes("w-full"):
         await render_roles(user)
+
+    with ui.expansion(t("import_export"), icon="swap_vert").classes("w-full"):
+        _render_import_export(user)
 
     registry = get_registry()
 
@@ -133,3 +138,48 @@ async def _render_yaml_editor(prefix, cfg_section, current, user):
     with ui.row():
         ui.button(t("save"), on_click=save).props("color=primary")
         ui.button(t("reset_defaults"), on_click=reset).props("flat color=grey")
+
+
+def _render_import_export(user):
+    ui.label(t("import_export_help")).classes("text-sm text-grey mb-2")
+
+    with ui.row().classes("items-center gap-2"):
+        async def do_export():
+            data = await export_all()
+            content = json.dumps(data, indent=2, ensure_ascii=False)
+            ui.download(content.encode(), "not-dot-net-export.json")
+            await log_audit(
+                "settings", "export",
+                actor_id=user.id, actor_email=user.email,
+                detail=f"pages={len(data.get('pages', []))} resources={len(data.get('resources', []))}",
+            )
+
+        ui.button(t("export_all"), icon="download", on_click=do_export).props("color=primary")
+
+    ui.separator().classes("my-3")
+
+    replace_toggle = ui.switch(t("import_replace")).tooltip(t("import_replace_help"))
+
+    async def handle_upload(e):
+        try:
+            content = e.content.read().decode()
+            data = json.loads(content)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            ui.notify(t("import_invalid_json"), color="negative")
+            return
+        result = await import_all(data, replace=replace_toggle.value)
+        parts = []
+        for entity, counts in result.items():
+            parts.append(f"{entity}: {counts['created']} created, {counts['updated']} updated, {counts['skipped']} skipped")
+        ui.notify("; ".join(parts), color="positive", multi_line=True)
+        await log_audit(
+            "settings", "import",
+            actor_id=user.id, actor_email=user.email,
+            detail=str(result),
+        )
+
+    ui.upload(
+        label=t("import_file"),
+        on_upload=handle_upload,
+        auto_upload=True,
+    ).props("accept=.json").classes("w-full max-w-md")
