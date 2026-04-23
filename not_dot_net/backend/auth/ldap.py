@@ -257,6 +257,31 @@ class LdapModifyError(Exception):
     """Raised when an AD modify fails (bind, permissions, or server error)."""
 
 
+def _ldap_bind(
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> Connection:
+    """Bind to AD. Raises LdapModifyError on failure."""
+    try:
+        return connect(ldap_cfg, bind_username, bind_password)
+    except LDAPBindError as e:
+        raise LdapModifyError(f"LDAP bind failed: {e}") from e
+    except LDAPException as e:
+        raise LdapModifyError(f"LDAP connection error: {e}") from e
+
+
+def _query_writable_attributes(conn: Connection, dn: str) -> set[str]:
+    """Query allowedAttributesEffective on an existing connection."""
+    conn.search(dn, "(objectClass=*)", attributes=["allowedAttributesEffective"])
+    if not conn.entries:
+        return set()
+    attr = conn.entries[0].allowedAttributesEffective
+    values = attr.values if hasattr(attr, "values") else (attr.value or [])
+    return {str(v) for v in values} if values else set()
+
+
 def ldap_get_writable_attributes(
     dn: str,
     bind_username: str,
@@ -265,19 +290,43 @@ def ldap_get_writable_attributes(
     connect: Callable[..., Connection] = default_ldap_connect,
 ) -> set[str]:
     """Return the set of AD attribute names the bound user can write on `dn`."""
+    conn = _ldap_bind(bind_username, bind_password, ldap_cfg, connect)
     try:
-        conn = connect(ldap_cfg, bind_username, bind_password)
-    except LDAPBindError as e:
-        raise LdapModifyError(f"LDAP bind failed: {e}") from e
-    except LDAPException as e:
-        raise LdapModifyError(f"LDAP connection error: {e}") from e
+        return _query_writable_attributes(conn, dn)
+    finally:
+        conn.unbind()
+
+
+def ldap_check_and_modify(
+    dn: str,
+    changes: dict[str, str | None],
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> tuple[set[str], list[str]]:
+    """Single-connection: query writable attrs, filter, then modify.
+
+    Returns (writable_attrs, skipped_attrs).
+    Raises LdapModifyError on bind or modify failure.
+    """
+    conn = _ldap_bind(bind_username, bind_password, ldap_cfg, connect)
     try:
-        conn.search(dn, "(objectClass=*)", attributes=["allowedAttributesEffective"])
-        if not conn.entries:
-            return set()
-        attr = conn.entries[0].allowedAttributesEffective
-        values = attr.values if hasattr(attr, "values") else (attr.value or [])
-        return {str(v) for v in values} if values else set()
+        writable = _query_writable_attributes(conn, dn)
+        allowed = {attr: val for attr, val in changes.items() if attr in writable}
+        skipped = [attr for attr in changes if attr not in writable]
+        if allowed:
+            modify_payload = {
+                attr: [(MODIFY_REPLACE, [value] if value else [])]
+                for attr, value in allowed.items()
+            }
+            ok = conn.modify(dn, modify_payload)
+            if not ok:
+                raise LdapModifyError(
+                    f"modify failed: {conn.result.get('description')} "
+                    f"({conn.result.get('message')})"
+                )
+        return writable, skipped
     finally:
         conn.unbind()
 
@@ -297,13 +346,7 @@ def ldap_modify_user(
     """
     if not changes:
         return
-    try:
-        conn = connect(ldap_cfg, bind_username, bind_password)
-    except LDAPBindError as e:
-        raise LdapModifyError(f"LDAP bind failed: {e}") from e
-    except LDAPException as e:
-        raise LdapModifyError(f"LDAP connection error: {e}") from e
-
+    conn = _ldap_bind(bind_username, bind_password, ldap_cfg, connect)
     try:
         modify_payload = {
             attr: [(MODIFY_REPLACE, [value] if value else [])]

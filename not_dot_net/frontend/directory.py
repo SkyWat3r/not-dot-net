@@ -369,12 +369,12 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
 
             if needs_ad_write and ad_credentials:
                 from not_dot_net.backend.auth.ldap import (
-                    ldap_config, get_ldap_connect, ldap_modify_user, LdapModifyError,
+                    ldap_config, get_ldap_connect, ldap_check_and_modify, LdapModifyError,
                 )
                 cfg = await ldap_config.get()
                 bind_user, bind_pass = ad_credentials
                 try:
-                    ldap_modify_user(
+                    _writable, skipped = ldap_check_and_modify(
                         dn=person.ldap_dn,
                         changes=ad_changes,
                         bind_username=bind_user,
@@ -385,6 +385,11 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
                 except LdapModifyError as e:
                     ui.notify(t("ad_write_failed", error=str(e)), color="negative")
                     return
+                if skipped:
+                    ui.notify(
+                        f"AD: skipped read-only attributes: {', '.join(skipped)}",
+                        color="warning",
+                    )
 
             await _update_user(person.id, diff)
             await _finish_save(container, person, current_user, state)
