@@ -86,6 +86,7 @@ USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
 class LdapUserInfo:
     email: str
     dn: str
+    sam_account_name: str | None = None
     full_name: str | None = None
     given_name: str | None = None
     surname: str | None = None
@@ -221,6 +222,7 @@ def ldap_authenticate(
         return LdapUserInfo(
             email=email,
             dn=entry.entry_dn,
+            sam_account_name=_attr_value(entry, "sAMAccountName") or username,
             full_name=_attr_value(entry, "displayName"),
             given_name=_attr_value(entry, "givenName"),
             surname=_attr_value(entry, "sn"),
@@ -364,19 +366,20 @@ def ldap_modify_user(
 
 # LdapUserInfo field name -> User model field name
 _INFO_TO_USER: dict[str, str] = {
-    "email":       "email",
-    "full_name":   "full_name",
-    "phone":       "phone",
-    "office":      "office",
-    "title":       "title",
-    "department":  "team",
-    "company":     "company",
-    "description": "description",
-    "webpage":     "webpage",
-    "member_of":   "member_of",
-    "photo":       "photo",
-    "uid_number":  "uid_number",
-    "gid_number":  "gid_number",
+    "email":             "email",
+    "sam_account_name":  "ldap_username",
+    "full_name":         "full_name",
+    "phone":             "phone",
+    "office":            "office",
+    "title":             "title",
+    "department":        "team",
+    "company":           "company",
+    "description":       "description",
+    "webpage":           "webpage",
+    "member_of":         "member_of",
+    "photo":             "photo",
+    "uid_number":        "uid_number",
+    "gid_number":        "gid_number",
 }
 
 

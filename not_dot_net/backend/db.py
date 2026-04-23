@@ -53,6 +53,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         String(50), default=""
     )
     ldap_dn: Mapped[str | None] = mapped_column(default=None)
+    ldap_username: Mapped[str | None] = mapped_column(default=None)
 
 
 _engine: AsyncEngine | None = None
