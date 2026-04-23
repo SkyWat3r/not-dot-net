@@ -167,6 +167,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "import_replace": "Update existing entries",
         "import_replace_help": "When enabled, existing pages (by slug) and resources (by name) are updated. When disabled, they are skipped.",
         "import_invalid_json": "Invalid JSON file",
+        "import_failed": "Import failed — check server logs",
+        "import_nothing": "Nothing to import — JSON has no 'pages' or 'resources' key",
     },
     "fr": {
         # Shell / nav
@@ -330,6 +332,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "import_replace": "Mettre à jour les entrées existantes",
         "import_replace_help": "Si activé, les pages (par slug) et ressources (par nom) existantes sont mises à jour. Sinon, elles sont ignorées.",
         "import_invalid_json": "Fichier JSON invalide",
+        "import_failed": "Échec de l'import — vérifiez les logs du serveur",
+        "import_nothing": "Rien à importer — le JSON ne contient ni 'pages' ni 'resources'",
     },
 }
 

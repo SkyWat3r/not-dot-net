@@ -1,6 +1,7 @@
 """Admin settings page — auto-generated forms from config registry."""
 
 import json
+import logging
 from enum import Enum
 
 from nicegui import ui
@@ -12,6 +13,8 @@ from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.data_io import export_all, import_all
 from not_dot_net.frontend.admin_roles import render as render_roles
 from not_dot_net.frontend.i18n import t
+
+logger = logging.getLogger(__name__)
 
 
 def _is_enum(annotation) -> bool:
@@ -161,25 +164,37 @@ def _render_import_export(user):
     replace_toggle = ui.switch(t("import_replace")).tooltip(t("import_replace_help"))
 
     async def handle_upload(e):
-        try:
-            content = e.content.read().decode()
-            data = json.loads(content)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            ui.notify(t("import_invalid_json"), color="negative")
-            return
-        result = await import_all(data, replace=replace_toggle.value)
-        parts = []
-        for entity, counts in result.items():
-            parts.append(f"{entity}: {counts['created']} created, {counts['updated']} updated, {counts['skipped']} skipped")
-        ui.notify("; ".join(parts), color="positive", multi_line=True)
-        await log_audit(
-            "settings", "import",
-            actor_id=user.id, actor_email=user.email,
-            detail=str(result),
-        )
+        await _handle_import_upload(e, replace=replace_toggle.value, user=user)
 
     ui.upload(
         label=t("import_file"),
         on_upload=handle_upload,
         auto_upload=True,
     ).props("accept=.json").classes("w-full max-w-md")
+
+
+async def _handle_import_upload(e, *, replace: bool, user):
+    try:
+        data = await e.file.json()
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+        logger.warning("Import: invalid JSON: %s", exc)
+        ui.notify(t("import_invalid_json"), color="negative")
+        return
+    try:
+        result = await import_all(data, replace=replace)
+    except Exception:
+        logger.exception("Import failed")
+        ui.notify(t("import_failed"), color="negative")
+        return
+    if not result:
+        ui.notify(t("import_nothing"), color="warning")
+        return
+    ui.notify("; ".join(
+        f"{entity}: {c['created']} created, {c['updated']} updated, {c['skipped']} skipped"
+        for entity, c in result.items()
+    ), color="positive", multi_line=True)
+    await log_audit(
+        "settings", "import",
+        actor_id=user.id, actor_email=user.email,
+        detail=json.dumps(result),
+    )

@@ -1,8 +1,9 @@
 """Import/export pages and booking resources as JSON."""
 
+import asyncio
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -46,11 +47,12 @@ async def export_resources() -> list[dict]:
 
 
 async def export_all() -> dict:
+    pages, resources = await asyncio.gather(export_pages(), export_resources())
     return {
         "version": 1,
-        "exported_at": datetime.utcnow().isoformat(),
-        "pages": await export_pages(),
-        "resources": await export_resources(),
+        "exported_at": datetime.now(UTC).isoformat(),
+        "pages": pages,
+        "resources": resources,
     }
 
 
