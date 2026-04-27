@@ -666,6 +666,66 @@ async def resolve_actor_names(actor_ids) -> dict[uuid.UUID, str]:
         return {row.id: row.full_name or row.email for row in result.all()}
 
 
+async def resend_notification(
+    request_id: uuid.UUID,
+    actor_user=None,
+) -> WorkflowRequest:
+    """Regenerate token and re-send notification for the current step.
+
+    Only works when the current step is assigned to target_person.
+    """
+    async with session_scope() as session:
+        req = await session.get(WorkflowRequest, request_id)
+        if req is None:
+            raise ValueError(f"Request {request_id} not found")
+        if req.status != RequestStatus.IN_PROGRESS:
+            raise ValueError("Only in-progress requests can be re-notified")
+
+        wf = await _get_workflow_config(req.type)
+
+        if actor_user is None:
+            raise PermissionError("No actor provided")
+
+        step_config = next((s for s in wf.steps if s.key == req.current_step), None)
+
+        if step_config is None or step_config.assignee != "target_person":
+            raise ValueError(f"Current step '{req.current_step}' is not assigned to target_person")
+
+        can_act = (
+            await has_permissions(actor_user, APPROVE_WORKFLOWS)
+            or await has_permissions(actor_user, "access_personal_data")
+            or await has_permissions(actor_user, "manage_users")
+        )
+        if not can_act:
+            raise PermissionError("Insufficient permissions to resend notification")
+
+        req.token = str(uuid.uuid4())
+        cfg = await workflows_config.get()
+        req.token_expires_at = datetime.now(timezone.utc) + timedelta(days=cfg.token_expiry_days)
+
+        req.verification_code_hash = None
+        req.code_expires_at = None
+        req.code_attempts = 0
+
+        await session.commit()
+        await session.refresh(req)
+
+    try:
+        await _fire_notifications(req, "submit", req.current_step, wf)
+    except Exception:
+        logger.exception("Failed to send notification for resend on request %s", request_id)
+
+    from not_dot_net.backend.audit import log_audit
+    await log_audit(
+        "workflow", "resend_notification",
+        actor_id=actor_user.id, actor_email=actor_user.email,
+        target_type="request", target_id=req.id,
+        detail=f"step={req.current_step}",
+    )
+
+    return req
+
+
 async def can_view_request(user, req: WorkflowRequest) -> bool:
     """Check if user is allowed to view this request."""
     from not_dot_net.backend.workflow_engine import can_user_act
