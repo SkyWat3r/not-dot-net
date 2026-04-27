@@ -1,8 +1,13 @@
 """Token page with email verification code gate."""
 
+from pathlib import Path
+
 from nicegui import ui
 
+from not_dot_net.backend.db import session_scope
+from not_dot_net.backend.encrypted_storage import store_encrypted
 from not_dot_net.backend.verification import generate_verification_code, verify_code
+from not_dot_net.backend.workflow_models import WorkflowFile
 from not_dot_net.backend.workflow_service import (
     get_request_by_token,
     save_draft,
@@ -89,6 +94,48 @@ def setup():
                         for doc in instructions:
                             ui.label(f"• {doc}").classes("text-sm")
 
+                uploaded_files: dict[str, str] = {}
+                encrypted_fields = {f.name for f in step.fields if f.encrypted}
+
+                async def handle_file_upload(field_name, event):
+                    content = event.content.read()
+                    filename = event.name
+                    content_type = event.type or "application/octet-stream"
+
+                    if field_name in encrypted_fields:
+                        enc_file = await store_encrypted(
+                            content, filename, content_type, uploaded_by=None,
+                        )
+                        async with session_scope() as session:
+                            wf_file = WorkflowFile(
+                                request_id=request.id,
+                                step_key=step.key,
+                                field_name=field_name,
+                                filename=filename,
+                                storage_path="encrypted",
+                                encrypted_file_id=enc_file.id,
+                            )
+                            session.add(wf_file)
+                            await session.commit()
+                    else:
+                        upload_dir = Path("data/uploads") / str(request.id)
+                        upload_dir.mkdir(parents=True, exist_ok=True)
+                        dest = upload_dir / filename
+                        dest.write_bytes(content)
+                        async with session_scope() as session:
+                            wf_file = WorkflowFile(
+                                request_id=request.id,
+                                step_key=step.key,
+                                field_name=field_name,
+                                filename=filename,
+                                storage_path=str(dest),
+                            )
+                            session.add(wf_file)
+                            await session.commit()
+
+                    uploaded_files[field_name] = filename
+                    ui.notify(f"Uploaded: {filename}", color="positive")
+
                 async def handle_submit(data):
                     await submit_step(
                         request.id, actor_id=None, action="submit", data=data,
@@ -108,6 +155,8 @@ def setup():
                     request.data,
                     on_submit=handle_submit,
                     on_save_draft=handle_save_draft if step.partial_save else None,
+                    files=uploaded_files,
+                    on_file_upload=handle_file_upload,
                 )
 
             # Initial view: just a "Send me a code" button
