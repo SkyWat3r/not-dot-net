@@ -40,6 +40,8 @@ from not_dot_net.config import (
 
 
 class WorkflowsConfig(BaseModel):
+    token_expiry_days: int = 30
+    verification_code_expiry_minutes: int = 15
     workflows: dict[str, WorkflowConfig] = {
         "vpn_access": WorkflowConfig(
             label="VPN Access Request",
@@ -310,7 +312,8 @@ async def submit_step(
                     break
             if next_step_config and next_step_config.assignee == "target_person":
                 req.token = str(uuid.uuid4())
-                req.token_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+                cfg = await workflows_config.get()
+                req.token_expires_at = datetime.now(timezone.utc) + timedelta(days=cfg.token_expiry_days)
 
         await session.commit()
         await session.refresh(req)
@@ -348,6 +351,44 @@ async def submit_step(
         except Exception:
             logger.exception("Failed to send notifications for request %s", request_id)
 
+        return req
+
+
+async def cancel_request(
+    request_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    actor_user=None,
+) -> WorkflowRequest:
+    """Cancel a request. Only the creator can cancel their own in-progress requests."""
+    async with session_scope() as session:
+        req = await session.get(WorkflowRequest, request_id)
+        if req is None:
+            raise ValueError(f"Request {request_id} not found")
+        if str(req.created_by) != str(actor_id):
+            raise PermissionError("Only the request creator can cancel it")
+        if req.status != RequestStatus.IN_PROGRESS:
+            raise ValueError("Only in-progress requests can be cancelled")
+
+        req.status = RequestStatus.CANCELLED
+        req.token = None
+        req.token_expires_at = None
+
+        event = WorkflowEvent(
+            request_id=req.id,
+            step_key=req.current_step,
+            action="cancel",
+            actor_id=actor_id,
+        )
+        session.add(event)
+        await session.commit()
+        await session.refresh(req)
+
+        from not_dot_net.backend.audit import log_audit
+        await log_audit(
+            "workflow", "cancel",
+            actor_id=actor_id,
+            target_type="request", target_id=req.id,
+        )
         return req
 
 

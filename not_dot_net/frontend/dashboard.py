@@ -149,7 +149,7 @@ async def _render_my_requests(container, user: User):
             <q-tr :props="props" @click="() => $parent.$emit('row-click', props.row)" class="cursor-pointer">
                 <q-td v-for="col in props.cols" :key="col.name" :props="props">
                     <q-badge v-if="col.name === 'status'"
-                        :color="col.value === 'completed' ? 'positive' : col.value === 'rejected' ? 'negative' : 'primary'"
+                        :color="col.value === 'completed' ? 'positive' : col.value === 'rejected' ? 'negative' : col.value === 'cancelled' ? 'grey' : 'primary'"
                         :label="col.value"
                     />
                     <q-badge v-else-if="col.name === 'age'"

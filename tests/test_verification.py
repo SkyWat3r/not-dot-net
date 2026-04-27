@@ -73,9 +73,24 @@ async def test_verify_code_rate_limited():
 
 
 @pytest.mark.asyncio
-async def test_resend_invalidates_old_code():
+async def test_reuse_valid_code():
     req = await _create_test_request()
     code1 = await generate_verification_code(req.id)
+    assert code1 is not None
     code2 = await generate_verification_code(req.id)
-    result = await verify_code(req.id, code2)
+    assert code2 is None
+    result = await verify_code(req.id, code1)
     assert result is True
+
+
+@pytest.mark.asyncio
+async def test_code_survives_verification():
+    """After verification, code stays in DB so has_valid_code still returns True."""
+    from not_dot_net.backend.verification import has_valid_code
+    req = await _create_test_request()
+    code = await generate_verification_code(req.id)
+    assert await has_valid_code(req.id) is True
+    await verify_code(req.id, code)
+    assert await has_valid_code(req.id) is True
+    regenerated = await generate_verification_code(req.id)
+    assert regenerated is None

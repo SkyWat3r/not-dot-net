@@ -107,8 +107,8 @@ async def _render_returning_search(container) -> dict:
                         )
                 ui.item(f"{match['name']} — {match['email']}{active_label}", on_click=select_user)
 
-    with ui.expansion("Search existing person (returning)", icon="search").classes("w-full mb-2"):
-        search_input = ui.input(label="Search by name or email").props("outlined dense")
+    with ui.expansion(t("search_existing"), icon="search").classes("w-full mb-2"):
+        search_input = ui.input(label=t("search_by_name_email")).props("outlined dense")
         search_input.on("keyup", on_search, throttle=0.3)
         results_container
 

@@ -56,7 +56,7 @@ async def render_step_form(
             fields[field_cfg.name] = None
         elif field_cfg.type == "email":
             fields[field_cfg.name] = ui.input(
-                label=label, value=value, validation={"Invalid email": lambda v: "@" in v if v else True}
+                label=label, value=value, validation={t("invalid_email"): lambda v: "@" in v if v else True}
             ).props("outlined dense type=email").classes("w-full")
         else:
             fields[field_cfg.name] = ui.input(
@@ -127,7 +127,7 @@ def render_approval(
         ).props("color=positive")
         if on_request_corrections:
             ui.button(
-                "Request Corrections",
+                t("request_corrections"),
                 icon="edit_note",
                 on_click=lambda: on_request_corrections(comment_input.value),
             ).props("color=warning")
@@ -144,6 +144,7 @@ def render_status_badge(status: str):
         "in_progress": "primary",
         "completed": "positive",
         "rejected": "negative",
+        "cancelled": "grey",
     }
     color = colors.get(status, "grey")
     ui.badge(t(status), color=color)

@@ -6,7 +6,7 @@ from nicegui import ui
 
 from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.encrypted_storage import store_encrypted
-from not_dot_net.backend.verification import generate_verification_code, verify_code
+from not_dot_net.backend.verification import generate_verification_code, has_valid_code, verify_code
 from not_dot_net.backend.workflow_models import WorkflowFile
 from not_dot_net.backend.workflow_service import (
     get_request_by_token,
@@ -49,12 +49,17 @@ def setup():
 
             async def send_code():
                 code = await generate_verification_code(req.id)
+                if code is None:
+                    ui.notify(t("code_already_sent"), color="info")
+                    return
                 mail_cfg = await mail_config.get()
+                wf_cfg = await workflows_config.get()
+                expiry = wf_cfg.verification_code_expiry_minutes
                 await send_mail(
                     req.target_email,
                     f"Your verification code for {wf.label}",
                     f"<p>Your verification code is: <strong>{code}</strong></p>"
-                    f"<p>This code expires in 15 minutes.</p>",
+                    f"<p>This code expires in {expiry} minutes.</p>",
                     mail_cfg,
                 )
                 container.clear()
@@ -63,8 +68,8 @@ def setup():
 
             def _render_code_input(cont, request, tok, step, workflow, resend_fn):
                 ui.label(t("token_welcome")).classes("text-grey mb-4")
-                ui.label("A verification code has been sent to your email.").classes("mb-2")
-                code_input = ui.input(label="Verification Code").props("outlined dense maxlength=6")
+                ui.label(t("code_sent")).classes("mb-2")
+                code_input = ui.input(label=t("verification_code")).props("outlined dense maxlength=6")
 
                 async def check_code():
                     try:
@@ -77,11 +82,11 @@ def setup():
                         with cont:
                             await _render_form(cont, request, tok, step, workflow)
                     else:
-                        ui.notify("Invalid or expired code", color="negative")
+                        ui.notify(t("invalid_code"), color="negative")
 
                 with ui.row().classes("gap-2 mt-2"):
-                    ui.button("Verify", on_click=check_code).props("color=primary")
-                    ui.button("Resend code", on_click=resend_fn).props("flat")
+                    ui.button(t("verify"), on_click=check_code).props("color=primary")
+                    ui.button(t("resend_code"), on_click=resend_fn).props("flat")
 
             async def _render_form(cont, request, tok, step, workflow):
                 status = request.data.get("status", "")
@@ -90,7 +95,7 @@ def setup():
                 )
                 if instructions:
                     with ui.card().classes("w-full mb-4 bg-blue-50"):
-                        ui.label("Required documents:").classes("font-bold text-sm")
+                        ui.label(t("required_documents") + ":").classes("font-bold text-sm")
                         for doc in instructions:
                             ui.label(f"• {doc}").classes("text-sm")
 
@@ -135,7 +140,7 @@ def setup():
                             await session.commit()
 
                     uploaded_files[field_name] = filename
-                    ui.notify(f"Uploaded: {filename}", color="positive")
+                    ui.notify(t("uploaded").format(filename=filename), color="positive")
 
                 async def handle_submit(data):
                     await submit_step(
@@ -160,7 +165,9 @@ def setup():
                     on_file_upload=handle_file_upload,
                 )
 
-            # Initial view: just a "Send me a code" button
             with container:
-                ui.label(t("token_welcome")).classes("text-grey mb-4")
-                ui.button("Send me a verification code", on_click=send_code).props("color=primary")
+                if await has_valid_code(req.id):
+                    _render_code_input(container, req, token, step_config, wf, send_code)
+                else:
+                    ui.label(t("token_welcome")).classes("text-grey mb-4")
+                    ui.button(t("send_code"), on_click=send_code).props("color=primary")

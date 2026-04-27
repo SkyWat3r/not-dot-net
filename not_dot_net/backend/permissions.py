@@ -34,6 +34,8 @@ MANAGE_SETTINGS = permission("manage_settings", "Manage settings", "Access admin
 
 async def has_permissions(user, *permissions: str) -> bool:
     """Check if user's role grants all given permissions."""
+    if getattr(user, "is_superuser", False):
+        return True
     from not_dot_net.backend.roles import roles_config
     cfg = await roles_config.get()
     role_def = cfg.roles.get(user.role)

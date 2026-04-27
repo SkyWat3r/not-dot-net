@@ -45,6 +45,7 @@ class WorkflowConfig(BaseModel):
 
 class OrgConfig(BaseModel):
     app_name: str = "LPP Intranet"
+    base_url: str = "http://localhost:8088"
     teams: list[str] = [
         "Plasma Physics",
         "Instrumentation",

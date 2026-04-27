@@ -11,6 +11,7 @@ from not_dot_net.backend.users import current_active_user_optional
 from not_dot_net.backend.workflow_engine import can_user_act, get_current_step_config
 from not_dot_net.backend.workflow_models import WorkflowFile
 from not_dot_net.backend.workflow_service import (
+    cancel_request,
     can_view_request,
     compute_step_age_days,
     get_request_by_id,
@@ -78,14 +79,18 @@ def setup():
             ui.label(t("app_name")).classes("text-h6 text-white text-weight-light")
 
         with ui.column().classes("w-full max-w-3xl mx-auto pa-6"):
-            _render_header(req, wf, age, dash_cfg, actor_names)
+            _render_header(req, wf, age, dash_cfg, actor_names, user)
 
             step_config = get_current_step_config(req, wf)
             render_step_progress(req.current_step, req.status, wf.steps)
 
             ui.separator().classes("my-4")
 
-            _render_timeline(events, actor_names, files_by_step, user)
+            field_labels = {
+                f.name: (f.label or f.name)
+                for step in wf.steps for f in step.fields
+            }
+            _render_timeline(events, actor_names, files_by_step, user, field_labels)
 
             if step_config and req.status == "in_progress":
                 can_act = await can_user_act(user, req, wf)
@@ -112,9 +117,10 @@ def _render_not_found():
         ui.label(t("page_not_found")).classes("text-h6")
 
 
-def _render_header(req, wf, age_days, dash_cfg, actor_names):
+def _render_header(req, wf, age_days, dash_cfg, actor_names, user):
     target = req.data.get("target_name") or req.data.get("person_name") or req.target_email or ""
     creator_name = actor_names.get(req.created_by, req.created_by or "")
+    is_creator = str(user.id) == str(req.created_by)
 
     with ui.row().classes("w-full items-start justify-between"):
         with ui.column().classes("gap-0"):
@@ -127,9 +133,22 @@ def _render_header(req, wf, age_days, dash_cfg, actor_names):
             render_status_badge(req.status)
             if req.status == "in_progress":
                 render_urgency_badge(age_days, dash_cfg.urgency_fresh_days, dash_cfg.urgency_aging_days)
+                if is_creator:
+                    async def handle_cancel():
+                        try:
+                            await cancel_request(req.id, user.id, actor_user=user)
+                        except Exception as e:
+                            ui.notify(str(e), color="negative")
+                            return
+                        ui.notify(t("request_cancelled"), color="positive")
+                        ui.navigate.to(f"/workflow/request/{req.id}")
+
+                    ui.button(t("cancel"), icon="cancel", on_click=handle_cancel).props(
+                        "flat color=negative size=sm"
+                    )
 
 
-def _render_timeline(events, actor_names, files_by_step, user):
+def _render_timeline(events, actor_names, files_by_step, user, field_labels):
     with ui.element("div").classes("relative ml-2 pl-5").style(
         "border-left: 2px solid #e0e0e0"
     ):
@@ -160,34 +179,40 @@ def _render_timeline(events, actor_names, files_by_step, user):
                     with ui.expansion(t("show_data")).classes("text-xs"):
                         for k, v in ev.data_snapshot.items():
                             if v:
-                                ui.label(f"{k}: {v}").classes("text-xs text-grey-8")
+                                label = field_labels.get(k, k)
+                                ui.label(f"{label}: {v}").classes("text-xs text-grey-8")
 
                 step_files = files_by_step.get(ev.step_key, [])
                 if step_files and ev.action in ("submit", "save_draft"):
                     for f in step_files:
+                        field_label = field_labels.get(f.field_name, f.field_name)
                         if f.encrypted_file_id:
                             async def download_encrypted(fid=f.encrypted_file_id, fname=f.filename):
                                 from not_dot_net.backend.permissions import has_permissions
                                 if not await has_permissions(user, "access_personal_data"):
-                                    ui.notify("Access denied", color="negative")
+                                    ui.notify(t("access_denied"), color="negative")
                                     return
                                 from not_dot_net.backend.encrypted_storage import read_encrypted
                                 data, name, ctype = await read_encrypted(
                                     fid, actor_id=user.id, actor_email=user.email,
                                 )
                                 ui.download(data, name)
-                            ui.button(
-                                f"📎 {f.filename}", on_click=download_encrypted,
-                            ).props("flat dense size=sm")
+                            with ui.row().classes("items-center gap-1"):
+                                ui.label(f"{field_label}:").classes("text-xs text-grey-8")
+                                ui.button(
+                                    f"📎 {f.filename}", on_click=download_encrypted,
+                                ).props("flat dense size=sm")
                         else:
                             from pathlib import Path
                             async def download_plain(fp=f.storage_path, fname=f.filename):
                                 path = Path(fp)
                                 if path.exists():
                                     ui.download(path.read_bytes(), fname)
-                            ui.button(
-                                f"📎 {f.filename}", on_click=download_plain,
-                            ).props("flat dense size=sm")
+                            with ui.row().classes("items-center gap-1"):
+                                ui.label(f"{field_label}:").classes("text-xs text-grey-8")
+                                ui.button(
+                                    f"📎 {f.filename}", on_click=download_plain,
+                                ).props("flat dense size=sm")
 
 
 async def _render_action_panel(container, user, req, step_config, wf, request_id_str):
@@ -223,7 +248,7 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                 except Exception as e:
                     ui.notify(str(e), color="negative")
                     return
-                ui.notify("Corrections requested", color="positive")
+                ui.notify(t("corrections_requested"), color="positive")
                 ui.navigate.to(f"/workflow/request/{request_id_str}")
 
             corrections_fn = handle_corrections if step_config.corrections_target else None

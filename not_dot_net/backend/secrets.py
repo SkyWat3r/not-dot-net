@@ -41,7 +41,17 @@ def read_secrets_file(path: Path) -> AppSecrets:
 
 def load_or_create(path: Path, dev_mode: bool) -> AppSecrets:
     if path.exists():
-        return read_secrets_file(path)
+        app_secrets = read_secrets_file(path)
+        if not app_secrets.file_encryption_key:
+            if dev_mode:
+                app_secrets.file_encryption_key = secrets.token_urlsafe(32)
+                path.write_text(json.dumps(app_secrets.model_dump(), indent=2))
+                os.chmod(path, 0o600)
+                logger.info("Generated missing file_encryption_key in %s", path)
+            else:
+                logger.error("file_encryption_key missing in secrets file: %s", path)
+                sys.exit(1)
+        return app_secrets
     if dev_mode:
         logger.info("Dev mode: generating secrets file %s", path)
         return generate_secrets_file(path)

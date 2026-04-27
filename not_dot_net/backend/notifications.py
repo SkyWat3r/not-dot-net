@@ -105,9 +105,12 @@ async def notify(
     get_users_by_role,
     get_users_by_permission=None,
 ) -> list[str]:
-    base_url = mail_settings.base_url.rstrip("/")
     """Fire notifications for a workflow event. Returns list of emails sent to."""
     from not_dot_net.backend.mail import send_mail
+    from not_dot_net.config import org_config
+
+    org_cfg = await org_config.get()
+    base_url = org_cfg.base_url.rstrip("/")
 
     rules = _matching_rules(workflow, event, step_key)
     if not rules:
