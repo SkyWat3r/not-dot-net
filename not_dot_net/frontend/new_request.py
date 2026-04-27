@@ -5,7 +5,7 @@ from sqlalchemy import select, or_
 
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.permissions import has_permissions
-from not_dot_net.backend.workflow_service import create_request, workflows_config
+from not_dot_net.backend.workflow_service import create_request, submit_step, workflows_config
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_step import render_step_form
 
@@ -52,11 +52,18 @@ async def render(user: User):
                 first_step = wf_config.steps[0]
 
                 async def handle_submit(data, key=wf_key, fc=form_container):
-                    await create_request(
+                    req = await create_request(
                         workflow_type=key,
                         created_by=user.id,
                         data=data,
                         actor=user,
+                    )
+                    await submit_step(
+                        request_id=req.id,
+                        actor_id=user.id,
+                        action="submit",
+                        data=data,
+                        actor_user=user,
                     )
                     ui.notify(t("request_created"), color="positive")
                     fc.set_visibility(False)
