@@ -179,6 +179,22 @@ class WorkflowsConfig(BaseModel):
 workflows_config = section("workflows", WorkflowsConfig, label="Workflows")
 
 
+async def _send_token_link(req, wf):
+    """Send the token link email directly to the target person."""
+    from not_dot_net.backend.mail import mail_config, send_mail
+    from not_dot_net.backend.notifications import render_email
+    from not_dot_net.config import org_config
+
+    if not req.target_email or not req.token:
+        return
+    mail_cfg = await mail_config.get()
+    org_cfg = await org_config.get()
+    base_url = org_cfg.base_url.rstrip("/")
+    link = f"{base_url}/workflow/token/{req.token}"
+    subject, body = render_email("token_link", wf.label, link=link)
+    await send_mail(req.target_email, subject, body, mail_cfg)
+
+
 async def _fire_notifications(req, event: str, step_key: str, wf):
     """Fire notifications for a workflow event. Best-effort.
 
@@ -711,7 +727,7 @@ async def resend_notification(
         await session.refresh(req)
 
     try:
-        await _fire_notifications(req, "submit", req.current_step, wf)
+        await _send_token_link(req, wf)
     except Exception:
         logger.exception("Failed to send notification for resend on request %s", request_id)
 
