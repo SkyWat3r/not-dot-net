@@ -198,8 +198,10 @@ def ldap_authenticate(
     try:
         conn = connect(ldap_cfg, username, password)
     except LDAPBindError:
+        logger.debug("LDAP bind failed for '%s' (bad credentials)", username)
         return None
-    except LDAPException:
+    except LDAPException as exc:
+        logger.warning("LDAP connection error for '%s': %s", username, exc)
         return None
 
     try:
@@ -215,6 +217,7 @@ def ldap_authenticate(
             attributes=_AD_ATTRIBUTES,
         )
         if not conn.entries:
+            logger.warning("LDAP search found no entries for '%s' (filter: %s)", username, search_filter)
             conn.unbind()
             return None
         entry = conn.entries[0]

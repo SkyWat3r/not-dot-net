@@ -53,19 +53,31 @@ def create_app(
     database_url = os.environ.get("DATABASE_URL", DEV_DB_URL)
     dev_mode = "DATABASE_URL" not in os.environ
 
+    logger.info("Starting NotDotNet (dev_mode=%s)", dev_mode)
+    logger.info("Database: %s", database_url.split("@")[-1] if "@" in database_url else database_url)
+    logger.info("Secrets file: %s", secrets_file)
+
     init_db(database_url)
+    logger.info("Database engine initialized")
+
     secrets = load_or_create(Path(secrets_file), dev_mode=dev_mode)
     init_user_secrets(secrets)
+    logger.info("Secrets loaded")
 
     if not dev_mode:
+        logger.info("Running migrations...")
         run_upgrade(database_url)
+        logger.info("Migrations complete")
         _lock_socketio_cors()
 
     async def startup():
+        logger.info("Running async startup...")
         if dev_mode:
             await create_db_and_tables()
+            logger.info("Dev tables created")
         from not_dot_net.backend.roles import seed_admin_permissions
         await seed_admin_permissions()
+        logger.info("Admin permissions seeded")
         if dev_mode:
             await ensure_default_admin(DEV_ADMIN_EMAIL, DEV_ADMIN_PASSWORD)
         if _seed_fake_users:
@@ -73,10 +85,13 @@ def create_app(
             await seed_fake_users()
         from not_dot_net.backend.auth.ldap import start_connection_reaper
         start_connection_reaper()
+        logger.info("Startup complete")
 
     async def shutdown():
+        logger.info("Shutting down...")
         from not_dot_net.backend.auth.ldap import drop_all_connections
         drop_all_connections()
+        logger.info("Shutdown complete")
 
     app.on_startup(startup)
     app.on_shutdown(shutdown)
