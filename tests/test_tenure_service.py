@@ -10,6 +10,10 @@ from not_dot_net.backend.tenure_service import (
     close_tenure,
     list_tenures,
     current_tenure,
+    avg_duration_by_status,
+    headcount_at_date,
+    update_tenure,
+    delete_tenure,
 )
 
 
@@ -97,3 +101,52 @@ async def test_list_tenures_ordered():
     tenures = await list_tenures(user.id)
     assert len(tenures) == 2
     assert tenures[0].start_date < tenures[1].start_date
+
+
+async def test_avg_duration_by_status():
+    u1 = await _create_user("a@lpp.fr")
+    u2 = await _create_user("b@lpp.fr")
+    await add_tenure(user_id=u1.id, status="PhD", employer="CNRS",
+                     start_date=date(2022, 9, 1), end_date=date(2025, 8, 31))
+    await add_tenure(user_id=u2.id, status="PhD", employer="Polytechnique",
+                     start_date=date(2023, 9, 1), end_date=date(2026, 8, 31))
+    stats = await avg_duration_by_status()
+    assert "PhD" in stats
+    assert stats["PhD"]["count"] == 2
+    assert stats["PhD"]["avg_days"] > 0
+
+
+async def test_headcount_at_date():
+    u1 = await _create_user("c@lpp.fr")
+    u2 = await _create_user("d@lpp.fr")
+    await add_tenure(user_id=u1.id, status="Intern", employer="CNRS",
+                     start_date=date(2025, 3, 1), end_date=date(2025, 8, 31))
+    await add_tenure(user_id=u2.id, status="PhD", employer="CNRS",
+                     start_date=date(2025, 1, 1))
+    count = await headcount_at_date(date(2025, 6, 1))
+    assert count == 2
+    count_after = await headcount_at_date(date(2025, 10, 1))
+    assert count_after == 1
+
+
+async def test_update_tenure():
+    user = await _create_user("e@lpp.fr")
+    tenure = await add_tenure(
+        user_id=user.id, status="Intern", employer="CNRS",
+        start_date=date(2025, 3, 1),
+    )
+    updated = await update_tenure(tenure.id, status="PhD", employer="Polytechnique")
+    assert updated.status == "PhD"
+    assert updated.employer == "Polytechnique"
+    assert updated.start_date == date(2025, 3, 1)
+
+
+async def test_delete_tenure():
+    user = await _create_user("f@lpp.fr")
+    tenure = await add_tenure(
+        user_id=user.id, status="Intern", employer="CNRS",
+        start_date=date(2025, 3, 1),
+    )
+    await delete_tenure(tenure.id)
+    tenures = await list_tenures(user.id)
+    assert len(tenures) == 0
