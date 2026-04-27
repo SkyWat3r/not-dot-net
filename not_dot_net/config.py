@@ -55,6 +55,7 @@ class OrgConfig(BaseModel):
     ]
     sites: list[str] = ["Palaiseau", "Jussieu"]
     employment_statuses: list[str] = ["CDD", "CDI", "Intern", "PhD", "PostDoc", "Visiting Researcher"]
+    employers: list[str] = ["CNRS", "Sorbonne Université", "Polytechnique", "CNES", "Other"]
     allowed_origins: list[str] = []
 
 

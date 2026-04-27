@@ -126,6 +126,7 @@ class WorkflowsConfig(BaseModel):
                     fields=[
                         FieldConfig(name="contact_email", type="email", required=True, label="Contact Email"),
                         FieldConfig(name="status", type="select", required=True, label="Status", options_key="employment_statuses"),
+                        FieldConfig(name="employer", type="select", required=True, label="Employer", options_key="employers"),
                     ],
                     actions=["submit"],
                 ),
