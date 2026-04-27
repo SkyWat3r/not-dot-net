@@ -1,12 +1,33 @@
 """New Request tab — pick a workflow type and fill the first step."""
 
 from nicegui import ui
+from sqlalchemy import select, or_
 
-from not_dot_net.backend.db import User
+from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.workflow_service import create_request, workflows_config
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_step import render_step_form
+
+
+async def _search_users(query: str) -> list[dict]:
+    """Search all users (including inactive) by name or email."""
+    if not query or len(query) < 2:
+        return []
+    async with session_scope() as session:
+        pattern = f"%{query}%"
+        result = await session.execute(
+            select(User).where(
+                or_(
+                    User.full_name.ilike(pattern),
+                    User.email.ilike(pattern),
+                )
+            ).limit(10)
+        )
+        return [
+            {"id": str(u.id), "email": u.email, "name": u.full_name or u.email, "active": u.is_active}
+            for u in result.scalars().all()
+        ]
 
 
 async def render(user: User):
@@ -40,12 +61,48 @@ async def render(user: User):
                     ui.notify(t("request_created"), color="positive")
                     fc.set_visibility(False)
 
-                async def toggle_form(fc=form_container, step=first_step):
+                async def toggle_form(fc=form_container, step=first_step, key=wf_key, wfc=wf_config):
                     visible = not fc.visible
                     fc.set_visibility(visible)
                     if visible:
                         fc.clear()
                         with fc:
-                            await render_step_form(step, {}, on_submit=handle_submit)
+                            prefill = {}
+                            if key == "onboarding":
+                                prefill = await _render_returning_search(fc)
+                            await render_step_form(step, prefill, on_submit=handle_submit)
 
                 card.on("click", toggle_form)
+
+
+async def _render_returning_search(container) -> dict:
+    """Render returning-person search. Returns prefill data dict."""
+    prefill = {}
+    results_container = ui.column().classes("w-full")
+
+    async def on_search(e):
+        matches = await _search_users(search_input.value)
+        results_container.clear()
+        with results_container:
+            for match in matches:
+                active_label = "" if match["active"] else " (inactive)"
+                async def select_user(m=match):
+                    nonlocal prefill
+                    prefill["contact_email"] = m["email"]
+                    prefill["returning_user_id"] = m["id"]
+                    search_input.value = m["name"]
+                    results_container.clear()
+                    with results_container:
+                        ui.chip(
+                            f"Returning: {m['name']}{active_label}",
+                            icon="person",
+                            color="blue",
+                        )
+                ui.item(f"{match['name']} — {match['email']}{active_label}", on_click=select_user)
+
+    with ui.expansion("Search existing person (returning)", icon="search").classes("w-full mb-2"):
+        search_input = ui.input(label="Search by name or email").props("outlined dense")
+        search_input.on("keyup", on_search, throttle=0.3)
+        results_container
+
+    return prefill
