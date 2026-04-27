@@ -71,3 +71,6 @@ class WorkflowFile(MappedAsDataclass, Base, kw_only=True):
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True, default=None
     )
     uploaded_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None)
+    encrypted_file_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("encrypted_file.id", ondelete="SET NULL"), nullable=True, default=None
+    )
