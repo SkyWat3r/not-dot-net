@@ -102,6 +102,40 @@ def setup():
                             action_container, user, req, step_config, wf, request_id,
                         )
 
+            # Resend notification button for admin — even when they can't act on the step
+            if (
+                step_config
+                and req.status == "in_progress"
+                and step_config.assignee == "target_person"
+                and req.target_email
+            ):
+                from not_dot_net.backend.permissions import has_permissions as _has_perms
+                can_resend = (
+                    await _has_perms(user, "approve_workflows")
+                    or await _has_perms(user, "access_personal_data")
+                    or await _has_perms(user, "manage_users")
+                )
+                if can_resend:
+                    with ui.card().classes("w-full q-pa-md mt-2").style(
+                        "background: #fff8e1; border: 1px solid #ffe082;"
+                    ):
+                        with ui.row().classes("items-center gap-2"):
+                            async def handle_resend():
+                                from not_dot_net.backend.workflow_service import resend_notification
+                                try:
+                                    await resend_notification(req.id, actor_user=user)
+                                except Exception as e:
+                                    ui.notify(str(e), color="negative")
+                                    return
+                                ui.notify(t("notification_resent"), color="positive")
+                                ui.navigate.to(f"/workflow/request/{request_id}")
+
+                            ui.button(
+                                t("resend_notification"), icon="send",
+                                on_click=handle_resend,
+                            ).props("flat color=primary size=sm")
+                            ui.label(f"→ {req.target_email}").classes("text-xs text-grey")
+
 
 def _render_not_found():
     ui.colors(primary="#0F52AC")
