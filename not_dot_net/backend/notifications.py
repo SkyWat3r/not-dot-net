@@ -35,6 +35,13 @@ TEMPLATES = {
                 "<strong>{workflow_label}</strong> submission.</p>"
                 "<p>Please visit the link you received previously to update your information.</p>",
     },
+    "corrections_with_link": {
+        "subject": "Corrections needed for your {workflow_label} submission",
+        "body": "<p>The administration team has requested corrections on your "
+                "<strong>{workflow_label}</strong> submission.</p>"
+                '<p>Please visit the following link to update your information:</p>'
+                '<p><a href="{link}">{link}</a></p>',
+    },
     "complete": {
         "subject": "Your {workflow_label} is complete — welcome!",
         "body": "<p>Your <strong>{workflow_label}</strong> onboarding is now complete. "
@@ -125,8 +132,8 @@ async def notify(
         # Determine template
         template_key = event
         kwargs = {}
-        if event == "submit" and request.token:
-            template_key = "token_link"
+        if request.token and event in ("submit", "request_corrections"):
+            template_key = "token_link" if event == "submit" else "corrections_with_link"
             kwargs["link"] = f"{base_url}/workflow/token/{request.token}"
 
         subject, body = render_email(template_key, workflow.label, **kwargs)

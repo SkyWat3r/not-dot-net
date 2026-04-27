@@ -167,3 +167,50 @@ async def test_notify_sends_to_resolved_recipients():
     assert len(sent_emails) == 1
     assert "dir@test.com" == sent_emails[0][0]
     assert "VPN Access Request" in sent_emails[0][1]
+
+
+ONBOARDING_WORKFLOW = WorkflowConfig(
+    label="Newcomer Onboarding",
+    start_role="staff",
+    target_email_field="target_email",
+    steps=[
+        WorkflowStepConfig(key="fill_form", type="form", assignee_role="target_person", actions=["submit"]),
+        WorkflowStepConfig(key="review", type="approval", assignee_role="hr", actions=["approve", "request_corrections"]),
+    ],
+    notifications=[
+        NotificationRuleConfig(event="request_corrections", notify=["target_person"]),
+    ],
+)
+
+
+async def test_request_corrections_includes_token_link():
+    """request_corrections notification must include the token link, not 'visit the link you received previously'."""
+    token = "abc123"
+    req = FakeRequest(
+        type="newcomer_onboarding",
+        current_step="fill_form",
+        target_email="newcomer@test.com",
+        token=token,
+    )
+
+    sent_emails = []
+
+    async def fake_send_mail(to, subject, body_html, mail_settings):
+        sent_emails.append((to, subject, body_html))
+
+    with patch("not_dot_net.backend.mail.send_mail", side_effect=fake_send_mail):
+        result = await notify(
+            request=req,
+            event="request_corrections",
+            step_key="review",
+            workflow=ONBOARDING_WORKFLOW,
+            mail_settings=MailConfig(dev_mode=True),
+            get_user_email=AsyncMock(return_value=None),
+            get_users_by_role=AsyncMock(return_value=[]),
+        )
+
+    assert "newcomer@test.com" in result
+    assert len(sent_emails) == 1
+    _, _, body = sent_emails[0]
+    assert token in body, "Token link must appear in the corrections email body"
+    assert "visit the link you received previously" not in body
