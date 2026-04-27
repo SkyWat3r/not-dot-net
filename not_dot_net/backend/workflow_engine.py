@@ -49,6 +49,13 @@ def compute_next_step(
         return (None, RequestStatus.REJECTED)
     if action == "save_draft":
         return (current_step_key, RequestStatus.IN_PROGRESS)
+    if action == "request_corrections":
+        step = next((s for s in workflow.steps if s.key == current_step_key), None)
+        if step is None or not step.corrections_target:
+            raise ValueError(
+                f"Step '{current_step_key}' has no corrections_target configured"
+            )
+        return (step.corrections_target, RequestStatus.IN_PROGRESS)
     step_keys = [s.key for s in workflow.steps]
     if current_step_key not in step_keys:
         raise ValueError(f"Unknown step '{current_step_key}' in workflow")

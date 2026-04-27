@@ -11,6 +11,7 @@ class FieldConfig(BaseModel):
     required: bool = False
     label: str = ""
     options_key: str | None = None  # for select: key in Settings (e.g. "teams")
+    encrypted: bool = False
 
 
 class NotificationRuleConfig(BaseModel):
@@ -28,6 +29,7 @@ class WorkflowStepConfig(BaseModel):
     fields: list[FieldConfig] = []
     actions: list[str] = []
     partial_save: bool = False
+    corrections_target: str | None = None
 
 
 class WorkflowConfig(BaseModel):
@@ -36,6 +38,7 @@ class WorkflowConfig(BaseModel):
     target_email_field: str | None = None
     steps: list[WorkflowStepConfig]
     notifications: list[NotificationRuleConfig] = []
+    document_instructions: dict[str, list[str]] = {}
 
 
 # --- OrgConfig section ---

@@ -205,3 +205,79 @@ def test_completion_status_complete():
 def test_compute_next_step_unknown_step_raises():
     with pytest.raises(ValueError, match="Unknown step"):
         compute_next_step(TWO_STEP_WORKFLOW, "nonexistent_step", "submit")
+
+
+# --- Task 4: Config model changes tests ---
+
+def test_field_config_encrypted_default_false():
+    fc = FieldConfig(name="doc", type="file")
+    assert fc.encrypted is False
+
+
+def test_field_config_encrypted_true():
+    fc = FieldConfig(name="doc", type="file", encrypted=True)
+    assert fc.encrypted is True
+
+
+def test_step_config_corrections_target():
+    sc = WorkflowStepConfig(
+        key="validation",
+        type="approval",
+        actions=["approve", "request_corrections", "reject"],
+        corrections_target="newcomer_info",
+    )
+    assert sc.corrections_target == "newcomer_info"
+
+
+def test_step_config_corrections_target_default_none():
+    sc = WorkflowStepConfig(key="step", type="form")
+    assert sc.corrections_target is None
+
+
+def test_workflow_config_document_instructions():
+    wc = WorkflowConfig(
+        label="Test",
+        steps=[],
+        document_instructions={"Intern": ["ID document"], "_default": ["ID", "RIB"]},
+    )
+    assert wc.document_instructions["Intern"] == ["ID document"]
+    assert wc.document_instructions["_default"] == ["ID", "RIB"]
+
+
+def test_workflow_config_document_instructions_default_empty():
+    wc = WorkflowConfig(label="Test", steps=[])
+    assert wc.document_instructions == {}
+
+
+# --- Task 5: Engine request_corrections action tests ---
+
+def test_request_corrections_returns_target_step():
+    wf = WorkflowConfig(
+        label="Test",
+        steps=[
+            WorkflowStepConfig(key="form", type="form", actions=["submit"]),
+            WorkflowStepConfig(
+                key="validation", type="approval",
+                actions=["approve", "request_corrections", "reject"],
+                corrections_target="form",
+            ),
+        ],
+    )
+    next_step, status = compute_next_step(wf, "validation", "request_corrections")
+    assert next_step == "form"
+    assert status == "in_progress"
+
+
+def test_request_corrections_without_target_raises():
+    wf = WorkflowConfig(
+        label="Test",
+        steps=[
+            WorkflowStepConfig(key="form", type="form", actions=["submit"]),
+            WorkflowStepConfig(
+                key="validation", type="approval",
+                actions=["approve", "request_corrections", "reject"],
+            ),
+        ],
+    )
+    with pytest.raises(ValueError, match="corrections_target"):
+        compute_next_step(wf, "validation", "request_corrections")
