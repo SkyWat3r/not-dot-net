@@ -504,11 +504,11 @@ async def _tenure_add_dialog(person: User, current_user: User, on_refresh):
     dialog = ui.dialog()
     with dialog, ui.card().classes("w-96"):
         ui.label(t("add_tenure")).classes("text-h6")
-        status_input = ui.select(cfg.employment_statuses, label=t("status")).props("outlined dense")
-        employer_input = ui.select(cfg.employers, label=t("employer")).props("outlined dense")
-        start_input = ui.input(t("start_date"), placeholder="YYYY-MM-DD").props("outlined dense")
-        end_input = ui.input(t("end_date"), placeholder="YYYY-MM-DD (optional)").props("outlined dense")
-        notes_input = ui.input(t("tenure_notes")).props("outlined dense")
+        status_input = ui.select(cfg.employment_statuses, label=t("status")).props("outlined dense stack-label")
+        employer_input = ui.select(cfg.employers, label=t("employer")).props("outlined dense stack-label")
+        start_input = ui.input(t("start_date"), placeholder="YYYY-MM-DD").props("outlined dense stack-label")
+        end_input = ui.input(t("end_date"), placeholder="YYYY-MM-DD (optional)").props("outlined dense stack-label")
+        notes_input = ui.input(t("tenure_notes")).props("outlined dense stack-label")
 
         async def save():
             if not status_input.value or not employer_input.value or not start_input.value:
@@ -555,11 +555,11 @@ async def _tenure_edit_dialog(tenure_id, person: User, current_user: User, on_re
     dialog = ui.dialog()
     with dialog, ui.card().classes("w-96"):
         ui.label(t("edit_tenure")).classes("text-h6")
-        status_input = ui.select(cfg.employment_statuses, value=tenure.status, label=t("status")).props("outlined dense")
-        employer_input = ui.select(cfg.employers, value=tenure.employer, label=t("employer")).props("outlined dense")
-        start_input = ui.input(t("start_date"), value=str(tenure.start_date)).props("outlined dense")
-        end_input = ui.input(t("end_date"), value=str(tenure.end_date) if tenure.end_date else "").props("outlined dense")
-        notes_input = ui.input(t("tenure_notes"), value=tenure.notes or "").props("outlined dense")
+        status_input = ui.select(cfg.employment_statuses, value=tenure.status, label=t("status")).props("outlined dense stack-label")
+        employer_input = ui.select(cfg.employers, value=tenure.employer, label=t("employer")).props("outlined dense stack-label")
+        start_input = ui.input(t("start_date"), value=str(tenure.start_date)).props("outlined dense stack-label")
+        end_input = ui.input(t("end_date"), value=str(tenure.end_date) if tenure.end_date else "").props("outlined dense stack-label")
+        notes_input = ui.input(t("tenure_notes"), value=tenure.notes or "").props("outlined dense stack-label")
 
         async def save():
             if not status_input.value or not employer_input.value or not start_input.value:
