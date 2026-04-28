@@ -1,5 +1,7 @@
 """Dashboard tab — My Requests + Awaiting My Action."""
 
+from datetime import datetime, timedelta, timezone
+
 from nicegui import ui
 
 
@@ -78,6 +80,22 @@ def _target_display(req) -> str:
     return name or req.target_email or ""
 
 
+TIME_PERIOD_DAYS = {
+    "last_7_days": 7,
+    "last_30_days": 30,
+    "last_90_days": 90,
+    "last_year": 365,
+    "all_time": None,
+}
+
+
+def _since_from_period(period_key: str) -> datetime | None:
+    days = TIME_PERIOD_DAYS.get(period_key)
+    if days is None:
+        return None
+    return datetime.now(timezone.utc) - timedelta(days=days)
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -87,14 +105,37 @@ def _target_display(req) -> str:
 
 async def _render_my_requests(container, user: User):
     container.clear()
+    is_admin = await has_permissions(user, "view_audit_log")
 
-    if await has_permissions(user, "view_audit_log"):
-        requests = await list_all_requests()
-    else:
-        requests = await list_user_requests(user.id)
+    period_options = {k: t(k) for k in TIME_PERIOD_DAYS}
 
     with container:
-        ui.label(t("my_requests")).classes("text-h6 mb-2")
+        with ui.row().classes("items-center justify-between w-full mb-2"):
+            ui.label(t("my_requests")).classes("text-h6")
+            period_select = ui.select(
+                options=period_options,
+                value="last_30_days",
+                label=t("time_period"),
+            ).props("outlined dense").classes("min-w-[160px]")
+
+        table_container = ui.column().classes("w-full")
+
+    async def load_table():
+        since = _since_from_period(period_select.value)
+        if is_admin:
+            requests = await list_all_requests(since=since)
+        else:
+            requests = await list_user_requests(user.id, since=since)
+        await _render_requests_table(table_container, requests)
+
+    period_select.on_value_change(lambda _: load_table())
+    await load_table()
+
+
+async def _render_requests_table(container, requests):
+    container.clear()
+
+    with container:
         if not requests:
             ui.label(t("no_requests")).classes("text-grey")
             return

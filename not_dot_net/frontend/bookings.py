@@ -107,7 +107,7 @@ async def _render_bookings(container, user: User, filter_range=None):
                 with ui.menu() as menu:
                     date_picker = ui.date(default_range).props("range")
 
-            all_sites = [t("all_types")] + sites
+            all_sites = [t("all_locations")] + sites
             site_select = ui.select(
                 options=all_sites, value=all_sites[0],
                 label=t("resource_location"),

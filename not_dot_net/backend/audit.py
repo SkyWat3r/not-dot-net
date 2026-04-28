@@ -15,16 +15,16 @@ logger = logging.getLogger("not_dot_net.audit")
 class AuditEvent(MappedAsDataclass, Base, kw_only=True):
     __tablename__ = "audit_event"
 
-    category: Mapped[str] = mapped_column(String(50))   # auth, user, workflow, booking, resource
-    action: Mapped[str] = mapped_column(String(100))     # login, create, update, delete, approve, reject, book, cancel
+    category: Mapped[str] = mapped_column(String(50), index=True)
+    action: Mapped[str] = mapped_column(String(100))
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
     actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True, default=None)
-    actor_email: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    actor_email: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None, index=True)
     target_type: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)  # user, request, resource, booking
     target_id: Mapped[str | None] = mapped_column(String(36), nullable=True, default=None)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None, index=True)
 
 
 async def log_audit(
@@ -72,6 +72,7 @@ async def list_audit_events(
     category: str | None = None,
     action: str | None = None,
     actor_email: str | None = None,
+    since: datetime | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[AuditEvent]:
@@ -83,6 +84,8 @@ async def list_audit_events(
             query = query.where(AuditEvent.action == action)
         if actor_email:
             query = query.where(AuditEvent.actor_email.ilike(f"%{actor_email}%"))
+        if since:
+            query = query.where(AuditEvent.created_at >= since)
         query = query.offset(offset).limit(limit)
         result = await session.execute(query)
         events = list(result.scalars().all())

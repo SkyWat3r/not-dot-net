@@ -19,7 +19,7 @@ class UserTenure(MappedAsDataclass, Base, kw_only=True):
     employer: Mapped[str] = mapped_column(String(200))
     start_date: Mapped[date] = mapped_column(Date)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
-    end_date: Mapped[date | None] = mapped_column(Date, nullable=True, default=None)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True, default=None, index=True)
     notes: Mapped[str | None] = mapped_column(String(1000), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None)
 

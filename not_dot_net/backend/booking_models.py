@@ -26,13 +26,13 @@ class Booking(MappedAsDataclass, Base, kw_only=True):
     __tablename__ = "booking"
 
     resource_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("resource.id", ondelete="CASCADE")
+        ForeignKey("resource.id", ondelete="CASCADE"), index=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("user.id", ondelete="CASCADE")
+        ForeignKey("user.id", ondelete="CASCADE"), index=True
     )
-    start_date: Mapped[date] = mapped_column(Date)
-    end_date: Mapped[date] = mapped_column(Date)
+    start_date: Mapped[date] = mapped_column(Date, index=True)
+    end_date: Mapped[date] = mapped_column(Date, index=True)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
     os_choice: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
     software_tags: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)

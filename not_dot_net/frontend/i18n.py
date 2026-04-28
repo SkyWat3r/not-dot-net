@@ -112,6 +112,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "access_denied": "Access denied",
         "target_person": "Target Person",
         "all_types": "All types",
+        "all_locations": "All locations",
         "all_statuses": "All statuses",
         "filter": "Filter",
         "start_date": "Start Date",
@@ -223,6 +224,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "import_invalid_json": "Invalid JSON file",
         "import_failed": "Import failed — check server logs",
         "import_nothing": "Nothing to import — JSON has no 'pages' or 'resources' key",
+        # Time filter
+        "time_period": "Period",
+        "last_7_days": "Last 7 days",
+        "last_30_days": "Last 30 days",
+        "last_90_days": "Last 90 days",
+        "last_year": "Last year",
+        "all_time": "All time",
     },
     "fr": {
         # Shell / nav
@@ -331,6 +339,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "access_denied": "Accès refusé",
         "target_person": "Personne concernée",
         "all_types": "Tous les types",
+        "all_locations": "Tous les sites",
         "all_statuses": "Tous les statuts",
         "filter": "Filtrer",
         "start_date": "Date de début",
@@ -442,6 +451,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "import_invalid_json": "Fichier JSON invalide",
         "import_failed": "Échec de l'import — vérifiez les logs du serveur",
         "import_nothing": "Rien à importer — le JSON ne contient ni 'pages' ni 'resources'",
+        # Time filter
+        "time_period": "Période",
+        "last_7_days": "7 derniers jours",
+        "last_30_days": "30 derniers jours",
+        "last_90_days": "90 derniers jours",
+        "last_year": "Dernière année",
+        "all_time": "Tout",
     },
 }
 

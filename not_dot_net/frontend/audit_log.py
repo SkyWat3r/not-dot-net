@@ -1,5 +1,7 @@
 """Audit log viewer — admin-only tab showing system events."""
 
+from datetime import datetime, timedelta, timezone
+
 from nicegui import ui
 
 from not_dot_net.backend.audit import list_audit_events
@@ -9,6 +11,21 @@ from not_dot_net.backend.permissions import permission
 VIEW_AUDIT_LOG = permission("view_audit_log", "View audit log", "Access the audit log")
 
 CATEGORIES = ["auth", "workflow", "booking", "resource", "user"]
+
+TIME_PERIOD_DAYS = {
+    "last_7_days": 7,
+    "last_30_days": 30,
+    "last_90_days": 90,
+    "last_year": 365,
+    "all_time": None,
+}
+
+
+def _since_from_period(period_key: str) -> datetime | None:
+    days = TIME_PERIOD_DAYS.get(period_key)
+    if days is None:
+        return None
+    return datetime.now(timezone.utc) - timedelta(days=days)
 
 
 def render():
@@ -20,18 +37,27 @@ def render():
     ui.timer(0, refresh, once=True)
 
 
-async def _render_log(container, category=None, actor_email=None):
+async def _render_log(container, category=None, actor_email=None, period="last_30_days"):
     container.clear()
 
+    since = _since_from_period(period)
     events = await list_audit_events(
-        category=category, actor_email=actor_email, limit=200,
+        category=category, actor_email=actor_email, since=since, limit=500,
     )
+
+    period_options = {k: t(k) for k in TIME_PERIOD_DAYS}
 
     with container:
         ui.label(t("audit_log")).classes("text-h6 mb-2")
 
         # Filters
         with ui.row().classes("items-end gap-2 mb-3"):
+            period_select = ui.select(
+                options=period_options,
+                value=period,
+                label=t("time_period"),
+            ).props("outlined dense").classes("min-w-[160px]")
+
             cat_select = ui.select(
                 options=[""] + CATEGORIES,
                 value=category or "",
@@ -46,7 +72,8 @@ async def _render_log(container, category=None, actor_email=None):
             async def apply():
                 c = cat_select.value or None
                 e = email_input.value.strip() or None
-                await _render_log(container, category=c, actor_email=e)
+                p = period_select.value
+                await _render_log(container, category=c, actor_email=e, period=p)
 
             ui.button(t("filter"), icon="search", on_click=apply).props(
                 "flat color=primary"

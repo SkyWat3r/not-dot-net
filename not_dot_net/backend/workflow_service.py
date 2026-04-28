@@ -549,13 +549,19 @@ async def get_request_by_token(token: str) -> WorkflowRequest | None:
         return result.scalar_one_or_none()
 
 
-async def list_user_requests(user_id: uuid.UUID) -> list[WorkflowRequest]:
+async def list_user_requests(
+    user_id: uuid.UUID,
+    since: datetime | None = None,
+) -> list[WorkflowRequest]:
     async with session_scope() as session:
-        result = await session.execute(
+        query = (
             select(WorkflowRequest)
             .where(WorkflowRequest.created_by == user_id)
             .order_by(WorkflowRequest.created_at.desc())
         )
+        if since:
+            query = query.where(WorkflowRequest.created_at >= since)
+        result = await session.execute(query)
         return list(result.scalars().all())
 
 
@@ -603,13 +609,15 @@ async def list_events_batch(
         return events_by_req
 
 
-async def list_all_requests() -> list[WorkflowRequest]:
+async def list_all_requests(
+    since: datetime | None = None,
+) -> list[WorkflowRequest]:
     """Admin-only: list all requests."""
     async with session_scope() as session:
-        result = await session.execute(
-            select(WorkflowRequest)
-            .order_by(WorkflowRequest.created_at.desc())
-        )
+        query = select(WorkflowRequest).order_by(WorkflowRequest.created_at.desc())
+        if since:
+            query = query.where(WorkflowRequest.created_at >= since)
+        result = await session.execute(query)
         return list(result.scalars().all())
 
 

@@ -19,17 +19,17 @@ class WorkflowRequest(MappedAsDataclass, Base, kw_only=True):
     __tablename__ = "workflow_request"
 
     type: Mapped[str] = mapped_column(String(100))
-    current_step: Mapped[str] = mapped_column(String(100))
+    current_step: Mapped[str] = mapped_column(String(100), index=True)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
     status: Mapped[str] = mapped_column(String(50), default="in_progress", index=True)
     data: Mapped[dict] = mapped_column(JSON, default_factory=dict)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("user.id", ondelete="SET NULL"), nullable=True, default=None
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True, default=None, index=True
     )
-    target_email: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
-    token: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    target_email: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None, index=True)
+    token: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None, index=True)
     token_expires_at: Mapped[datetime | None] = mapped_column(nullable=True, default=None)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now(), default=None
     )
@@ -42,7 +42,7 @@ class WorkflowEvent(MappedAsDataclass, Base, kw_only=True):
     __tablename__ = "workflow_event"
 
     request_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("workflow_request.id", ondelete="CASCADE")
+        ForeignKey("workflow_request.id", ondelete="CASCADE"), index=True
     )
     step_key: Mapped[str] = mapped_column(String(100))
     action: Mapped[str] = mapped_column(String(50))
@@ -60,7 +60,7 @@ class WorkflowFile(MappedAsDataclass, Base, kw_only=True):
     __tablename__ = "workflow_file"
 
     request_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("workflow_request.id", ondelete="CASCADE")
+        ForeignKey("workflow_request.id", ondelete="CASCADE"), index=True
     )
     step_key: Mapped[str] = mapped_column(String(100))
     field_name: Mapped[str] = mapped_column(String(100))
