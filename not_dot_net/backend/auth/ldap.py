@@ -101,11 +101,13 @@ def _ad_account_active(entry) -> bool:
         val = attr.value
         if val is not None:
             if isinstance(val, datetime):
-                # ldap3 auto-converts to datetime; naive means "never"
-                now = datetime.now(timezone.utc)
-                expires = val if val.tzinfo else val.replace(tzinfo=timezone.utc)
-                if expires < now:
-                    return False
+                # ldap3 auto-converts FILETIME to datetime; sentinel values
+                # (0 → 1601-01-01, max → 9999+) mean "never expires"
+                if val.year > 1601 and val.year < 9999:
+                    now = datetime.now(timezone.utc)
+                    expires = val if val.tzinfo else val.replace(tzinfo=timezone.utc)
+                    if expires < now:
+                        return False
             elif isinstance(val, int) and val not in _ACCOUNT_EXPIRES_NEVER:
                 expires_dt = _FILETIME_EPOCH + timedelta(microseconds=val // 10)
                 if expires_dt < datetime.now(timezone.utc).replace(tzinfo=None):
