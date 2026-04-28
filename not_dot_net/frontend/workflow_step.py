@@ -1,10 +1,43 @@
 """Reusable step renderer — form fields or approval UI."""
 
+import asyncio
+import logging
+from datetime import date as dt_date
+
+import httpx
 from nicegui import ui
 
 from not_dot_net.backend.workflow_engine import get_completion_status
 from not_dot_net.config import WorkflowStepConfig
-from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.i18n import TRANSLATIONS, get_locale, t
+
+_log = logging.getLogger(__name__)
+
+_NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+_NOMINATIM_HEADERS = {"User-Agent": "LPP-Intranet/1.0"}
+
+
+async def _nominatim_search(query: str) -> list[dict]:
+    """Returns list of {display_name, lat, lon}."""
+    if len(query) < 3:
+        return []
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                _NOMINATIM_URL,
+                params={"q": query, "format": "json", "limit": 5},
+                headers=_NOMINATIM_HEADERS,
+                timeout=5,
+            )
+            if resp.status_code != 200:
+                return []
+            return [
+                {"display_name": r["display_name"], "lat": float(r["lat"]), "lon": float(r["lon"])}
+                for r in resp.json()
+            ]
+    except Exception:
+        _log.exception("Nominatim search failed")
+        return []
 
 
 async def render_step_form(
@@ -38,7 +71,7 @@ async def render_step_form(
             options = await _resolve_options(field_cfg.options_key)
             fields[field_cfg.name] = ui.select(
                 label=label, options=options, value=value if value in options else None
-            ).props("outlined dense").classes("w-full")
+            ).props("outlined dense stack-label").classes("w-full")
         elif field_cfg.type == "file":
             uploaded = (files or {}).get(field_cfg.name)
             if uploaded:
@@ -56,6 +89,44 @@ async def render_step_form(
             else:
                 ui.label(f"{label}: no upload available").classes("text-grey text-sm")
             fields[field_cfg.name] = None
+        elif field_cfg.type == "location":
+            nominatim_results: list[dict] = []
+            loc_select = ui.select(
+                label=label,
+                options={value: value} if value else {},
+                value=value or None,
+                with_input=True,
+            ).props("outlined dense stack-label use-input hide-selected fill-input input-debounce=500").classes("w-full")
+
+            loc_map = ui.leaflet(center=(48.71, 2.21), zoom=4).classes("w-full rounded").style("height: 250px")
+            loc_marker = None
+
+            async def _on_input_value(e, sel=loc_select):
+                nonlocal nominatim_results
+                query = e.args if isinstance(e.args, str) else ""
+                if len(query) < 3:
+                    return
+                nominatim_results = await _nominatim_search(query)
+                sel.set_options({r["display_name"]: r["display_name"] for r in nominatim_results})
+
+            def _on_select_change(e, sel=loc_select):
+                nonlocal loc_marker
+                chosen = sel.value
+                if not chosen:
+                    return
+                match = next((r for r in nominatim_results if r["display_name"] == chosen), None)
+                if match:
+                    coords = (match["lat"], match["lon"])
+                    loc_map.set_center(coords)
+                    loc_map.set_zoom(12)
+                    if loc_marker is not None:
+                        loc_marker.move(coords[0], coords[1])
+                    else:
+                        loc_marker = loc_map.marker(latlng=coords)
+
+            loc_select.on("input-value", lambda e: asyncio.ensure_future(_on_input_value(e)))
+            loc_select.on("update:model-value", _on_select_change)
+            fields[field_cfg.name] = loc_select
         elif field_cfg.type == "email":
             fields[field_cfg.name] = ui.input(
                 label=label, value=value, validation={t("invalid_email"): lambda v: "@" in v if v else True}
@@ -64,6 +135,10 @@ async def render_step_form(
             fields[field_cfg.name] = ui.input(
                 label=label, value=value
             ).props("outlined dense").classes("w-full")
+
+    # Date-pair: show duration when both departure_date and return_date are set
+    if "departure_date" in fields and "return_date" in fields:
+        _wire_date_pair(fields["departure_date"], fields["return_date"])
 
     # Completion status for partial-save steps
     if step.partial_save:
@@ -83,6 +158,10 @@ async def render_step_form(
             ]
             if missing:
                 ui.notify(f"{t('required_field')}: {', '.join(missing)}", color="negative")
+                return
+            error = _validate_date_pair(collected)
+            if error:
+                ui.notify(error, color="negative")
                 return
             await on_submit(collected)
 
@@ -117,7 +196,8 @@ def render_approval(
 
     for key, value in request_data.items():
         if value:
-            ui.label(f"{key}: {value}").classes("text-sm")
+            label = t(key) if key in TRANSLATIONS.get(get_locale(), {}) else key
+            ui.label(f"{label}: {value}").classes("text-sm")
 
     comment_input = ui.textarea(label=t("comment")).props("outlined dense").classes("w-full mt-2")
 
@@ -200,6 +280,49 @@ def render_step_progress(current_step: str, status: str, steps: list):
             ui.label(label).classes(cls)
 
 
+def _parse_date(value: str) -> dt_date | None:
+    try:
+        return dt_date.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _wire_date_pair(departure_input, return_input):
+    """Add a duration badge between departure and return date fields."""
+    duration_label = ui.label().classes("text-sm text-primary")
+
+    def update_duration(*_args):
+        dep = _parse_date(departure_input.value)
+        ret = _parse_date(return_input.value)
+        if dep and ret and ret >= dep:
+            days = (ret - dep).days
+            nights = max(0, days)
+            duration_label.text = t("mission_duration", days=days + 1, nights=nights)
+            duration_label.set_visibility(True)
+        else:
+            duration_label.set_visibility(False)
+
+    departure_input.on("update:model-value", update_duration)
+    return_input.on("update:model-value", update_duration)
+    update_duration()
+
+
+def _validate_date_pair(collected: dict) -> str | None:
+    dep_str = collected.get("departure_date")
+    ret_str = collected.get("return_date")
+    if not dep_str or not ret_str:
+        return None
+    dep = _parse_date(dep_str)
+    ret = _parse_date(ret_str)
+    if not dep or not ret:
+        return None
+    if dep < dt_date.today():
+        return t("departure_in_past")
+    if ret < dep:
+        return t("return_before_departure")
+    return None
+
+
 def _collect_data(fields: dict) -> dict:
     """Collect values from UI fields."""
     return {
@@ -234,4 +357,12 @@ async def _resolve_options(options_key: str | None) -> list[str]:
         from not_dot_net.config import org_config
         cfg = await org_config.get()
         return cfg.employers
+    if options_key == "transport_modes":
+        from not_dot_net.config import org_config
+        cfg = await org_config.get()
+        return cfg.transport_modes
+    if options_key == "funding_sources":
+        from not_dot_net.config import org_config
+        cfg = await org_config.get()
+        return cfg.funding_sources
     return []

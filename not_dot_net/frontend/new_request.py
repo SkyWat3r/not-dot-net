@@ -1,6 +1,6 @@
 """New Request tab — pick a workflow type and fill the first step."""
 
-from nicegui import ui
+from nicegui import app, ui
 from sqlalchemy import select, or_
 
 from not_dot_net.backend.db import User, session_scope
@@ -8,6 +8,8 @@ from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.workflow_service import create_request, submit_step, workflows_config
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_step import render_step_form
+
+_CLONE_DATE_FIELDS = {"departure_date", "return_date", "start_date", "end_date"}
 
 
 async def _search_users(query: str) -> list[dict]:
@@ -33,6 +35,7 @@ async def _search_users(query: str) -> list[dict]:
 async def render(user: User):
     """Render the new request tab content."""
     cfg = await workflows_config.get()
+    clone = app.storage.user.pop("clone_prefill", None)
     container = ui.column().classes("w-full")
 
     with container:
@@ -68,18 +71,27 @@ async def render(user: User):
                     ui.notify(t("request_created"), color="positive")
                     fc.set_visibility(False)
 
-                async def toggle_form(fc=form_container, step=first_step, key=wf_key, wfc=wf_config):
-                    visible = not fc.visible
-                    fc.set_visibility(visible)
-                    if visible:
-                        fc.clear()
-                        with fc:
-                            prefill = {}
-                            if key == "onboarding":
-                                prefill = await _render_returning_search(fc)
-                            await render_step_form(step, prefill, on_submit=handle_submit)
+                async def _open_form(fc=form_container, step=first_step, key=wf_key, prefill_data=None, submit_fn=handle_submit):
+                    fc.clear()
+                    fc.set_visibility(True)
+                    with fc:
+                        prefill = dict(prefill_data or {})
+                        if key == "onboarding":
+                            prefill.update(await _render_returning_search(fc))
+                        await render_step_form(step, prefill, on_submit=submit_fn)
+
+                async def toggle_form(fc=form_container, step=first_step, key=wf_key):
+                    if fc.visible:
+                        fc.set_visibility(False)
+                    else:
+                        await _open_form(fc, step, key)
 
                 card.on("click", toggle_form)
+
+                if clone and clone.get("type") == wf_key:
+                    clone_data = {k: v for k, v in clone.get("data", {}).items() if k not in _CLONE_DATE_FIELDS}
+                    ui.timer(0, lambda fc=form_container, step=first_step, key=wf_key, cd=clone_data:
+                             _open_form(fc, step, key, cd), once=True)
 
 
 async def _render_returning_search(container) -> dict:

@@ -173,6 +173,52 @@ class WorkflowsConfig(BaseModel):
                 NotificationRuleConfig(event="complete", step="it_account_creation", notify=["requester", "target_person"]),
             ],
         ),
+        "ordre_de_mission": WorkflowConfig(
+            label="Ordre de Mission",
+            start_role="staff",
+            steps=[
+                WorkflowStepConfig(
+                    key="submission",
+                    type="form",
+                    assignee="requester",
+                    assignee_permission="create_workflows",
+                    fields=[
+                        FieldConfig(name="mission_subject", type="textarea", required=True, label="mission_subject"),
+                        FieldConfig(name="destination", type="location", required=True, label="destination"),
+                        FieldConfig(name="conference_or_lab", type="text", required=True, label="conference_or_lab"),
+                        FieldConfig(name="departure_date", type="date", required=True, label="departure_date"),
+                        FieldConfig(name="return_date", type="date", required=True, label="return_date"),
+                        FieldConfig(name="transport_mode", type="select", required=True, label="transport_mode", options_key="transport_modes"),
+                        FieldConfig(name="funding_source", type="select", required=True, label="funding_source", options_key="funding_sources"),
+                        FieldConfig(name="estimated_cost", type="text", label="estimated_cost"),
+                        FieldConfig(name="additional_info", type="textarea", label="additional_info"),
+                        FieldConfig(name="invitation_or_program", type="file", label="invitation_or_program"),
+                    ],
+                    actions=["submit"],
+                ),
+                WorkflowStepConfig(
+                    key="admin_validation",
+                    type="approval",
+                    assignee_permission="approve_workflows",
+                    actions=["approve", "request_corrections", "reject"],
+                    corrections_target="submission",
+                ),
+                WorkflowStepConfig(
+                    key="director_approval",
+                    type="approval",
+                    assignee_role="director",
+                    assignee_permission="approve_workflows",
+                    actions=["approve", "reject"],
+                ),
+            ],
+            notifications=[
+                NotificationRuleConfig(event="submit", step="submission", notify=["permission:approve_workflows"]),
+                NotificationRuleConfig(event="approve", step="admin_validation", notify=["director"]),
+                NotificationRuleConfig(event="request_corrections", step="admin_validation", notify=["requester"]),
+                NotificationRuleConfig(event="approve", step="director_approval", notify=["requester"]),
+                NotificationRuleConfig(event="reject", notify=["requester"]),
+            ],
+        ),
     }
 
 
@@ -543,7 +589,7 @@ async def get_request_by_token(token: str) -> WorkflowRequest | None:
             select(WorkflowRequest).where(
                 WorkflowRequest.token == token,
                 WorkflowRequest.status == RequestStatus.IN_PROGRESS,
-                WorkflowRequest.token_expires_at > datetime.now(timezone.utc),
+                WorkflowRequest.token_expires_at > datetime.now(timezone.utc).replace(tzinfo=None),
             )
         )
         return result.scalar_one_or_none()

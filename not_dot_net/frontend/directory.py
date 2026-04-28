@@ -264,30 +264,27 @@ async def _render_edit(container, person: User, current_user: User, state: dict)
     from not_dot_net.backend.auth.ldap import get_user_connection, _query_writable_attributes
 
     conn = get_user_connection(str(current_user.id))
+    writable: set[str] | None = set()
     if conn is not None:
         try:
             writable = _query_writable_attributes(conn, person.ldap_dn)
         except Exception:
             writable = set()
-        await _render_edit_form(container, person, current_user, state,
-                                ad_writable=writable, stored_conn=conn)
-    elif person.id == current_user.id:
-        ui.notify(t("session_expired"), color="warning")
-        ui.navigate.to("/login")
-    else:
-        await _prompt_ad_credentials_then_edit(container, person, current_user, state)
+
+    await _render_edit_form(container, person, current_user, state,
+                            ad_writable=writable, stored_conn=conn)
 
 
-async def _prompt_ad_credentials_then_edit(container, person, current_user, state):
-    """Ask for AD credentials when no stored connection exists (e.g. admin editing another user)."""
+def _prompt_ad_credentials_then_save(person, current_user, save_callback):
+    """Prompt for AD credentials only when saving changes to AD-mapped fields."""
     from not_dot_net.backend.auth.ldap import (
-        ldap_config, get_ldap_connect, _query_writable_attributes,
+        ldap_config, get_ldap_connect,
         _ldap_bind, LdapModifyError, store_user_connection,
     )
 
     dialog = ui.dialog()
     with dialog, ui.card():
-        ui.label(t("admin_ad_credentials"))
+        ui.label(t("confirm_password_to_save_ad"))
         username_input = ui.input(t("ad_admin_username")).props("outlined dense")
         password_input = ui.input(t("password"), password=True).props("outlined dense")
         error_label = ui.label("").classes("text-negative")
@@ -299,7 +296,6 @@ async def _prompt_ad_credentials_then_edit(container, person, current_user, stat
             cfg = await ldap_config.get()
             try:
                 conn = _ldap_bind(bind_user, password_input.value, cfg, get_ldap_connect())
-                writable = _query_writable_attributes(conn, person.ldap_dn)
             except LdapModifyError as e:
                 msg = str(e)
                 error_label.set_text(
@@ -308,18 +304,11 @@ async def _prompt_ad_credentials_then_edit(container, person, current_user, stat
                 return
             store_user_connection(str(current_user.id), conn)
             dialog.close()
-            await _render_edit_form(
-                container, person, current_user, state,
-                ad_writable=writable,
-                stored_conn=conn,
-            )
+            await save_callback(ad_conn=conn)
 
         with ui.row():
             ui.button(t("submit"), on_click=submit).props("flat color=primary")
-            async def do_cancel():
-                dialog.close()
-                await _render_detail(container, person, current_user, state)
-            ui.button(t("cancel"), on_click=do_cancel).props("flat")
+            ui.button(t("cancel"), on_click=dialog.close).props("flat")
 
     dialog.open()
 
@@ -362,13 +351,21 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
             _add_field("end_date", t("end_date"),
                        str(person.end_date) if person.end_date else "")
 
+            from not_dot_net.backend.roles import roles_config
+            roles_cfg = await roles_config.get()
+            role_options = sorted(roles_cfg.roles.keys())
+            role_select = ui.select(
+                role_options, value=person.role or "", label=t("role"),
+            ).props("outlined dense stack-label").classes("w-full")
+            fields["role"] = role_select
+
         _add_field("phone", t("phone"), person.phone or "")
         _add_field("office", t("office"), person.office or "")
         _add_field("company", t("company"), person.company or "")
         _add_field("description", t("description"), person.description or "")
         _add_field("webpage", t("webpage"), person.webpage or "")
 
-        async def save():
+        async def _do_save(ad_conn=None):
             submitted = {}
             for k, v in fields.items():
                 if not _is_ad_writable(k, ad_writable):
@@ -388,12 +385,13 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
             needs_ad_write = bool(ad_changes) and person.auth_method == AuthMethod.LDAP
 
             if needs_ad_write:
-                from not_dot_net.backend.auth.ldap import get_user_connection, LdapModifyError
                 from ldap3 import MODIFY_REPLACE
-                conn = get_user_connection(str(current_user.id))
+                conn = ad_conn
+                if conn is None:
+                    from not_dot_net.backend.auth.ldap import get_user_connection
+                    conn = get_user_connection(str(current_user.id))
                 if conn is None or not conn.bound:
-                    ui.notify(t("session_expired"), color="warning")
-                    ui.navigate.to("/login")
+                    _prompt_ad_credentials_then_save(person, current_user, _do_save)
                     return
                 modify_payload = {
                     attr: [(MODIFY_REPLACE, [val] if val else [])]
@@ -424,6 +422,9 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
                 metadata={"changes": changes},
             )
             await _finish_save(container, person, current_user, state)
+
+        async def save():
+            await _do_save(stored_conn)
 
         with ui.row():
             ui.button(t("save"), on_click=save).props("flat dense color=primary")

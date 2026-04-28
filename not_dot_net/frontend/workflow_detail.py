@@ -4,7 +4,7 @@ import uuid
 from typing import Optional
 
 from fastapi import Depends
-from nicegui import ui
+from nicegui import app, ui
 
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.users import current_active_user_optional
@@ -87,7 +87,7 @@ def setup():
             ui.separator().classes("my-4")
 
             field_labels = {
-                f.name: (f.label or f.name)
+                f.name: t(f.label) if f.label else f.name
                 for step in wf.steps for f in step.fields
             }
             _render_timeline(events, actor_names, files_by_step, user, field_labels)
@@ -180,6 +180,15 @@ def _render_header(req, wf, age_days, dash_cfg, actor_names, user):
                     ui.button(t("cancel"), icon="cancel", on_click=handle_cancel).props(
                         "flat color=negative size=sm"
                     )
+            if is_creator:
+                def handle_clone():
+                    app.storage.user["clone_prefill"] = {"type": req.type, "data": dict(req.data)}
+                    app.storage.user["active_tab"] = t("new_request")
+                    ui.navigate.to("/")
+
+                ui.button(t("clone_request"), icon="content_copy", on_click=handle_clone).props(
+                    "flat color=primary size=sm"
+                )
 
 
 def _render_timeline(events, actor_names, files_by_step, user, field_labels):
