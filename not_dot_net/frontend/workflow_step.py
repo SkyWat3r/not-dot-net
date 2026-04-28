@@ -52,21 +52,29 @@ async def render_step_form(
     """Render a form step's fields. Returns dict of field name -> ui element."""
     fields = {}
     row_ctx = None
+    row_count = 0
 
     def _open_row_if_needed(field_cfg):
-        nonlocal row_ctx
+        nonlocal row_ctx, row_count
         if field_cfg.half_width:
             if row_ctx is None:
                 row_ctx = ui.row().classes("w-full gap-4")
                 row_ctx.__enter__()
+                row_count = 0
+            row_count += 1
         else:
             _close_row()
 
     def _close_row():
-        nonlocal row_ctx
+        nonlocal row_ctx, row_count
         if row_ctx is not None:
             row_ctx.__exit__(None, None, None)
             row_ctx = None
+            row_count = 0
+
+    def _close_row_if_full():
+        if row_count >= 2:
+            _close_row()
 
     for field_cfg in step.fields:
         label = t(field_cfg.label) if field_cfg.label else field_cfg.name
@@ -111,15 +119,13 @@ async def render_step_form(
             fields[field_cfg.name] = None
         elif field_cfg.type == "location":
             nominatim_results: list[dict] = []
-            with ui.row().classes("w-full gap-4 items-start"):
-                with ui.column().classes("flex-1"):
-                    loc_select = ui.select(
-                        label=label,
-                        options={value: value} if value else {},
-                        value=value or None,
-                        with_input=True,
-                    ).props("outlined dense stack-label use-input hide-selected fill-input input-debounce=500").classes("w-full")
-                loc_map = ui.leaflet(center=(48.71, 2.21), zoom=4).classes("rounded").style("height: 180px; width: 300px; min-width: 200px")
+            loc_select = ui.select(
+                label=label,
+                options={value: value} if value else {},
+                value=value or None,
+                with_input=True,
+            ).props("outlined dense stack-label use-input hide-selected fill-input input-debounce=500").classes("w-full")
+            loc_map = ui.leaflet(center=(48.71, 2.21), zoom=4).classes("w-full rounded").style("height: 200px")
             loc_marker = None
 
             async def _on_input_value(e, sel=loc_select):
@@ -156,6 +162,8 @@ async def render_step_form(
             fields[field_cfg.name] = ui.input(
                 label=label, value=value
             ).props("outlined dense").classes(width_class)
+
+        _close_row_if_full()
 
     _close_row()
 
