@@ -71,6 +71,7 @@ class WorkflowEditorDialog:
         self._current_warnings: list[str] = []
         self._roles: dict = {}
         self._permissions: dict = {}
+        self._unlocked_fields: set[tuple[str, str, str]] = set()
 
     @classmethod
     async def create(cls, user) -> "WorkflowEditorDialog":
@@ -261,7 +262,45 @@ class WorkflowEditorDialog:
 
     def set_field_attr(self, wf_key: str, step_key: str, index: int, attr: str, value) -> None:
         step = self._find_step(wf_key, step_key)
-        setattr(step.fields[index], attr, value)
+        field = step.fields[index]
+        if attr == "name" and self._is_field_name_locked(wf_key, step_key, field.name):
+            raise ValueError(
+                f"Internal name '{field.name}' is locked; call unlock_field_name() first"
+            )
+        setattr(field, attr, value)
+
+    def _is_field_saved(self, wf_key: str, step_key: str, field_name: str) -> bool:
+        wf = self.original.workflows.get(wf_key)
+        if not wf:
+            return False
+        for step in wf.steps:
+            if step.key != step_key:
+                continue
+            for f in step.fields:
+                if f.name == field_name:
+                    return True
+        return False
+
+    def _is_field_name_locked(self, wf_key: str, step_key: str, field_name: str) -> bool:
+        if (wf_key, step_key, field_name) in self._unlocked_fields:
+            return False
+        return self._is_field_saved(wf_key, step_key, field_name)
+
+    def unlock_field_name(self, wf_key: str, step_key: str, field_name: str) -> None:
+        """Unlock a saved field's internal name so it can be renamed."""
+        self._unlocked_fields.add((wf_key, step_key, field_name))
+
+    def set_field_label_with_autoslug(self, wf_key: str, step_key: str, index: int, label: str) -> None:
+        """Set a field's display name. Auto-generate the internal name when it's
+        a new (not-yet-saved) field; leave the internal name alone for saved fields.
+        """
+        step = self._find_step(wf_key, step_key)
+        field = step.fields[index]
+        field.label = label
+        if self._is_field_name_locked(wf_key, step_key, field.name):
+            return
+        taken = {f.name for j, f in enumerate(step.fields) if j != index and f.name}
+        field.name = _slugify(label, taken)
 
     def delete_field(self, wf_key: str, step_key: str, index: int) -> None:
         step = self._find_step(wf_key, step_key)
@@ -491,34 +530,72 @@ class WorkflowEditorDialog:
                       ).classes("w-full").props("dense outlined stack-label")
 
         ui.label("Fields").classes("text-subtitle2 q-mt-md")
+        if not step.fields:
+            ui.label(t("empty_fields")).classes("text-grey text-sm")
+
         org_keys = [None, *_org_list_field_names()]
         for idx, field in enumerate(step.fields):
-            with ui.row().classes("w-full items-center gap-2 no-wrap"):
-                ui.input("name", value=field.name,
-                         on_change=lambda e, i=idx, w=wf_key, sk=step.key: self.set_field_attr(w, sk, i, "name", e.value)
-                         ).props("dense outlined stack-label").classes("w-32")
-                ui.select(["text", "email", "textarea", "date", "select", "file"], value=field.type, label="type",
-                          on_change=lambda e, i=idx, w=wf_key, sk=step.key: self.set_field_attr(w, sk, i, "type", e.value)
-                          ).props("dense outlined stack-label").classes("w-32")
-                ui.switch("required", value=field.required,
-                          on_change=lambda e, i=idx, w=wf_key, sk=step.key: self.set_field_attr(w, sk, i, "required", e.value))
-                ui.input("label", value=field.label,
-                         on_change=lambda e, i=idx, w=wf_key, sk=step.key: self.set_field_attr(w, sk, i, "label", e.value)
-                         ).props("dense outlined stack-label").classes("w-40")
-                ui.select(org_keys, value=field.options_key, label="options_key",
-                          on_change=lambda e, i=idx, w=wf_key, sk=step.key: self.set_field_attr(w, sk, i, "options_key", e.value)
-                          ).props("dense outlined stack-label").classes("w-40")
-                ui.switch("encrypted", value=field.encrypted,
-                          on_change=lambda e, i=idx, w=wf_key, sk=step.key: self.set_field_attr(w, sk, i, "encrypted", e.value))
-                ui.switch("half_width", value=field.half_width,
-                          on_change=lambda e, i=idx, w=wf_key, sk=step.key: self.set_field_attr(w, sk, i, "half_width", e.value))
-                ui.button(icon="delete",
-                          on_click=lambda i=idx, w=wf_key, sk=step.key: self.delete_field(w, sk, i)
-                          ).props("flat dense round color=negative")
+            with ui.column().classes("w-full"):
+                with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                    ui.input(t("field_display_name"), value=field.label,
+                             on_change=lambda e, i=idx, w=wf_key, sk=step.key:
+                                 self.set_field_label_with_autoslug(w, sk, i, e.value)
+                             ).props("dense outlined stack-label").classes("grow")
+                    ui.select(["text", "email", "textarea", "date", "select", "file"],
+                              value=field.type, label="type",
+                              on_change=lambda e, i=idx, w=wf_key, sk=step.key:
+                                  self.set_field_attr(w, sk, i, "type", e.value)
+                              ).props("dense outlined stack-label").classes("w-32")
+                    ui.switch("Required", value=field.required,
+                              on_change=lambda e, i=idx, w=wf_key, sk=step.key:
+                                  self.set_field_attr(w, sk, i, "required", e.value))
+                    ui.switch(t("field_half_width"), value=field.half_width,
+                              on_change=lambda e, i=idx, w=wf_key, sk=step.key:
+                                  self.set_field_attr(w, sk, i, "half_width", e.value))
+                    with ui.expansion(t("field_more"), icon="more_vert").classes("grow-0"):
+                        self._render_field_more(wf_key, step.key, idx, field, org_keys)
+                    ui.button(icon="delete",
+                              on_click=lambda i=idx, w=wf_key, sk=step.key:
+                                  self.delete_field(w, sk, i)
+                              ).props("flat dense round color=negative")
 
         ui.button("+ Add field",
                   on_click=lambda w=wf_key, sk=step.key: self.add_field(w, sk)
                   ).props("flat dense color=primary")
+
+    def _render_field_more(self, wf_key: str, step_key: str, idx: int, field, org_keys) -> None:
+        locked = self._is_field_name_locked(wf_key, step_key, field.name)
+        with ui.column().classes("w-full"):
+            name_input = ui.input(t("field_internal_name"), value=field.name).props(
+                "dense outlined stack-label"
+            ).classes("w-full")
+            if locked:
+                name_input.props("readonly")
+                ui.label(t("field_internal_name_warn")).classes("text-warning text-xs")
+
+                def _on_unlock(w=wf_key, sk=step_key, fn=field.name):
+                    self.unlock_field_name(w, sk, fn)
+                    self._refresh_detail()
+                ui.button(t("field_internal_name_unlock"), on_click=_on_unlock
+                          ).props("flat dense color=warning")
+            else:
+                name_input.on_value_change(
+                    lambda e, i=idx, w=wf_key, sk=step_key:
+                        self._safe_field_rename(w, sk, i, e.value)
+                )
+            ui.select(org_keys, value=field.options_key, label=t("field_options_key"),
+                      on_change=lambda e, i=idx, w=wf_key, sk=step_key:
+                          self.set_field_attr(w, sk, i, "options_key", e.value)
+                      ).props("dense outlined stack-label").classes("w-full")
+            ui.switch(t("field_encrypted"), value=field.encrypted,
+                      on_change=lambda e, i=idx, w=wf_key, sk=step_key:
+                          self.set_field_attr(w, sk, i, "encrypted", e.value))
+
+    def _safe_field_rename(self, wf_key: str, step_key: str, idx: int, new_name: str) -> None:
+        try:
+            self.set_field_attr(wf_key, step_key, idx, "name", new_name)
+        except ValueError as e:
+            ui.notify(str(e), color="negative")
 
     def _safe_set(self, wf_key: str, step_key: str, field: str, value) -> None:
         try:

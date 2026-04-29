@@ -929,3 +929,92 @@ async def test_existing_yaml_compat_with_recipient_picker(user: User, admin_user
     await dlg.save()
     persisted = await workflows_config.get()
     assert persisted.workflows["a"].notifications[0].notify == ["permission:approve_workflows", "requester"]
+
+
+async def test_field_internal_name_auto_generated_for_new_field(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "a": WorkflowConfig(label="A", steps=[WorkflowStepConfig(key="s", type="form")]),
+    }))
+    captured = {}
+
+    @ui.page("/_field_auto1")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_field_auto1")
+    dlg = captured["dlg"]
+    dlg.add_field("a", "s")
+    dlg.set_field_label_with_autoslug("a", "s", 0, "Email Address")
+    field = dlg.working_copy.workflows["a"].steps[0].fields[0]
+    assert field.label == "Email Address"
+    assert field.name == "email_address"
+
+
+async def test_field_internal_name_locked_after_save_raises(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    from not_dot_net.config import FieldConfig
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "a": WorkflowConfig(label="A", steps=[
+            WorkflowStepConfig(key="s", type="form", fields=[
+                FieldConfig(name="email", type="email", label="Email"),
+            ]),
+        ]),
+    }))
+    captured = {}
+
+    @ui.page("/_field_lock1")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_field_lock1")
+    dlg = captured["dlg"]
+    with pytest.raises(ValueError):
+        dlg.set_field_attr("a", "s", 0, "name", "renamed")
+
+
+async def test_field_internal_name_unlock_allows_rename(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    from not_dot_net.config import FieldConfig
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "a": WorkflowConfig(label="A", steps=[
+            WorkflowStepConfig(key="s", type="form", fields=[
+                FieldConfig(name="email", type="email", label="Email"),
+            ]),
+        ]),
+    }))
+    captured = {}
+
+    @ui.page("/_field_lock2")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_field_lock2")
+    dlg = captured["dlg"]
+    dlg.unlock_field_name("a", "s", "email")
+    dlg.set_field_attr("a", "s", 0, "name", "renamed")
+    assert dlg.working_copy.workflows["a"].steps[0].fields[0].name == "renamed"
+
+
+async def test_field_label_change_does_not_retype_locked_internal_name(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    from not_dot_net.config import FieldConfig
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "a": WorkflowConfig(label="A", steps=[
+            WorkflowStepConfig(key="s", type="form", fields=[
+                FieldConfig(name="email", type="email", label="Email"),
+            ]),
+        ]),
+    }))
+    captured = {}
+
+    @ui.page("/_field_lock3")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_field_lock3")
+    dlg = captured["dlg"]
+    dlg.set_field_label_with_autoslug("a", "s", 0, "Work Email")
+    field = dlg.working_copy.workflows["a"].steps[0].fields[0]
+    assert field.label == "Work Email"
+    assert field.name == "email"  # locked, unchanged
