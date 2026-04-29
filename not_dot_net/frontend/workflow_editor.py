@@ -140,6 +140,43 @@ class WorkflowEditorDialog:
         del self.working_copy.workflows[wf_key].notifications[index]
         self._refresh_detail()
 
+    # --- step-level field mutations ---
+
+    def _find_step(self, wf_key: str, step_key: str):
+        wf = self.working_copy.workflows[wf_key]
+        for step in wf.steps:
+            if step.key == step_key:
+                return step
+        raise KeyError(f"step {step_key} not found in {wf_key}")
+
+    def set_step_field(self, wf_key: str, step_key: str, field: str, value) -> None:
+        step = self._find_step(wf_key, step_key)
+        if field == "key":
+            wf = self.working_copy.workflows[wf_key]
+            if any(s.key == value for s in wf.steps if s is not step):
+                raise ValueError(f"Step '{value}' already exists in workflow '{wf_key}'")
+            _validate_slug(value)
+            step.key = value
+            if self.selected_step == step_key:
+                self.selected_step = value
+            self._refresh_tree()
+            return
+        setattr(step, field, value)
+
+    def set_step_assignee(self, wf_key: str, step_key: str, *, mode: str, value: str | None) -> None:
+        step = self._find_step(wf_key, step_key)
+        step.assignee_role = None
+        step.assignee_permission = None
+        step.assignee = None
+        if mode == "role":
+            step.assignee_role = value
+        elif mode == "permission":
+            step.assignee_permission = value
+        elif mode == "contextual":
+            step.assignee = value
+        else:
+            raise ValueError(f"Unknown assignee mode: {mode}")
+
     # --- rendering ---
 
     def _refresh_tree(self) -> None:
@@ -179,8 +216,8 @@ class WorkflowEditorDialog:
             if self.selected_step is None:
                 self._render_workflow_editor(self.selected_workflow, wf)
             else:
-                ui.label(f"Step: {self.selected_step}").classes("text-h6")
-                ui.label("(step editor will land in Tasks 7-8)").classes("text-grey")
+                step = self._find_step(self.selected_workflow, self.selected_step)
+                self._render_step_editor(self.selected_workflow, step)
             ui.button(
                 f"+ Add step to {self.selected_workflow}",
                 on_click=lambda k=self.selected_workflow: self._on_add_step_click(k),
@@ -250,6 +287,61 @@ class WorkflowEditorDialog:
         ui.button("+ Add notification rule",
                   on_click=lambda k=wf_key: self.add_notification_rule(k)
                   ).props("flat dense color=primary")
+
+    def _render_step_editor(self, wf_key: str, step) -> None:
+        from not_dot_net.frontend.widgets import chip_list_editor
+
+        ui.label(f"Step: {step.key}").classes("text-h6")
+
+        ui.input("key", value=step.key,
+                 on_change=lambda e, w=wf_key, k=step.key: self._safe_set(w, k, "key", e.value)
+                 ).classes("w-full").props("dense outlined stack-label")
+
+        ui.select(["form", "approval"], value=step.type, label="type",
+                  on_change=lambda e, w=wf_key, k=step.key: self.set_step_field(w, k, "type", e.value)
+                  ).classes("w-full").props("dense outlined stack-label")
+
+        # Assignee — radio group
+        current_mode = ("role" if step.assignee_role else
+                        "permission" if step.assignee_permission else
+                        "contextual" if step.assignee else "role")
+        current_value = step.assignee_role or step.assignee_permission or step.assignee or ""
+
+        ui.label("Assigned to").classes("text-subtitle2 q-mt-sm")
+        mode_toggle = ui.toggle({"role": "Role", "permission": "Permission", "contextual": "Contextual"},
+                                value=current_mode).props("dense")
+        value_input = ui.input("assignee value", value=current_value).classes("w-full").props("dense outlined stack-label")
+
+        def _commit_assignee(w=wf_key, k=step.key):
+            self.set_step_assignee(w, k, mode=mode_toggle.value, value=value_input.value or None)
+
+        mode_toggle.on_value_change(lambda e: _commit_assignee())
+        value_input.on_value_change(lambda e: _commit_assignee())
+
+        # actions
+        actions_widget = chip_list_editor(step.actions,
+                                          suggestions=["submit", "approve", "reject", "request_corrections", "cancel"])
+
+        def _bind_actions(w=actions_widget, wk=wf_key, sk=step.key):
+            self.set_step_field(wk, sk, "actions", list(w.value))
+            self._refresh_detail()  # corrections_target visibility may change
+        actions_widget.on_value_change(lambda e, _b=_bind_actions: _b())
+
+        ui.switch("partial_save", value=step.partial_save,
+                  on_change=lambda e, w=wf_key, k=step.key: self.set_step_field(w, k, "partial_save", e.value))
+
+        if "request_corrections" in (step.actions or []):
+            wf = self.working_copy.workflows[wf_key]
+            other_keys = [s.key for s in wf.steps if s.key != step.key]
+            ui.select([None, *other_keys], value=step.corrections_target, label="corrections_target",
+                      on_change=lambda e, w=wf_key, k=step.key: self.set_step_field(w, k, "corrections_target", e.value)
+                      ).classes("w-full").props("dense outlined stack-label")
+
+    def _safe_set(self, wf_key: str, step_key: str, field: str, value) -> None:
+        try:
+            self.set_step_field(wf_key, step_key, field, value)
+        except ValueError as e:
+            ui.notify(str(e), color="negative")
 
     def _collect_widget_state(self) -> None:
         wf_doc = self._workflow_doc_instructions_widget

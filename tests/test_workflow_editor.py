@@ -300,3 +300,93 @@ async def test_delete_notification_rule(user: User, admin_user):
     dlg.delete_notification_rule("a", 0)
     assert len(dlg.working_copy.workflows["a"].notifications) == 1
     assert dlg.working_copy.workflows["a"].notifications[0].event == "reject"
+
+
+async def test_set_step_key_renames_in_place(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "a": WorkflowConfig(label="A", steps=[
+            WorkflowStepConfig(key="old", type="form"),
+        ]),
+    }))
+
+    captured = {}
+
+    @ui.page("/_step1")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_step1")
+    dlg = captured["dlg"]
+    dlg.select("a", "old")
+    dlg.set_step_field("a", "old", "key", "renamed")
+    assert dlg.working_copy.workflows["a"].steps[0].key == "renamed"
+    assert dlg.selected_step == "renamed"
+
+
+async def test_set_step_assignee_mode_role(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "a": WorkflowConfig(label="A", steps=[
+            WorkflowStepConfig(key="s", type="form", assignee_role=None,
+                               assignee_permission="approve_workflows"),
+        ]),
+    }))
+
+    captured = {}
+
+    @ui.page("/_step2")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_step2")
+    dlg = captured["dlg"]
+    dlg.set_step_assignee("a", "s", mode="role", value="director")
+    step = dlg.working_copy.workflows["a"].steps[0]
+    assert step.assignee_role == "director"
+    assert step.assignee_permission is None
+    assert step.assignee is None
+
+
+async def test_set_step_assignee_mode_permission(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "a": WorkflowConfig(label="A", steps=[
+            WorkflowStepConfig(key="s", type="form", assignee_role="staff"),
+        ]),
+    }))
+
+    captured = {}
+
+    @ui.page("/_step3")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_step3")
+    dlg = captured["dlg"]
+    dlg.set_step_assignee("a", "s", mode="permission", value="approve_workflows")
+    step = dlg.working_copy.workflows["a"].steps[0]
+    assert step.assignee_role is None
+    assert step.assignee_permission == "approve_workflows"
+    assert step.assignee is None
+
+
+async def test_set_step_assignee_mode_contextual(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "a": WorkflowConfig(label="A", steps=[WorkflowStepConfig(key="s", type="form")]),
+    }))
+
+    captured = {}
+
+    @ui.page("/_step4")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_step4")
+    dlg = captured["dlg"]
+    dlg.set_step_assignee("a", "s", mode="contextual", value="target_person")
+    step = dlg.working_copy.workflows["a"].steps[0]
+    assert step.assignee == "target_person"
+    assert step.assignee_role is None
+    assert step.assignee_permission is None
