@@ -4,7 +4,7 @@ import pytest
 from nicegui import ui
 from nicegui.testing import User
 
-from not_dot_net.frontend.widgets import chip_list_editor
+from not_dot_net.frontend.widgets import chip_list_editor, keyed_chip_editor
 
 
 async def test_chip_list_editor_initial_value(user: User):
@@ -34,3 +34,37 @@ async def test_chip_list_editor_writes_back_list(user: User):
     await user.open("/_w3")
     captured["w"].value = ["x", "y"]
     assert captured["w"].value == ["x", "y"]
+
+
+async def test_keyed_chip_editor_initial_value(user: User):
+    captured = {}
+
+    @ui.page("/_k1")
+    def _page():
+        captured["w"] = keyed_chip_editor({"Linux": ["bash"], "Windows": ["powershell"]})
+    await user.open("/_k1")
+    assert captured["w"].value == {"Linux": ["bash"], "Windows": ["powershell"]}
+
+
+async def test_keyed_chip_editor_add_remove_key(user: User):
+    captured = {}
+
+    @ui.page("/_k2")
+    def _page():
+        captured["w"] = keyed_chip_editor({"a": ["1"]})
+    await user.open("/_k2")
+    captured["w"].add_key("b", ["2"])
+    assert captured["w"].value == {"a": ["1"], "b": ["2"]}
+    captured["w"].remove_key("a")
+    assert captured["w"].value == {"b": ["2"]}
+
+
+async def test_keyed_chip_editor_nested_change_propagates(user: User):
+    captured = {}
+
+    @ui.page("/_k3")
+    def _page():
+        captured["w"] = keyed_chip_editor({"k": ["x"]})
+    await user.open("/_k3")
+    captured["w"].set_values("k", ["x", "y"])
+    assert captured["w"].value == {"k": ["x", "y"]}
