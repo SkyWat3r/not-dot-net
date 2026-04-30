@@ -260,6 +260,10 @@ async def _render_detail(container, person: User, current_user: User, state: dic
                 "flat dense color=negative"
             )
 
+        is_ad_user = person.auth_method == AuthMethod.LDAP and person.ldap_dn
+        if current_user.is_superuser and is_ad_user and not is_own:
+            _render_ad_enable_disable_button(container, person, current_user)
+
         if is_own or is_admin:
             ui.separator().classes("my-2")
             await _render_tenure_history(container, person, current_user, is_admin)
@@ -322,6 +326,92 @@ def _prompt_ad_credentials_then_save(person, current_user, save_callback):
             ui.button(t("cancel"), on_click=dialog.close).props("flat")
 
     dialog.open()
+
+
+def _render_ad_enable_disable_button(container, person: User, current_user: User) -> None:
+    """Render an AD enable/disable button on the person detail card.
+
+    Caller must already have verified `current_user.is_superuser`, the target
+    is an AD user, and not viewing self. Pushes the change to AD via the
+    bound admin's credentials, then updates local `is_active` for immediate
+    UI feedback.
+    """
+    from not_dot_net.backend.audit import log_audit
+    from not_dot_net.backend.auth.ldap import (
+        LdapModifyError, ldap_config, ldap_set_account_enabled,
+    )
+    from not_dot_net.backend.db import session_scope as _session_scope
+
+    display = person.full_name or person.email
+    enabling = not person.is_active
+    label = t("enable_account") if enabling else t("disable_account")
+    color = "positive" if enabling else "negative"
+    icon = "check_circle" if enabling else "block"
+    confirm_msg = (t("confirm_enable_account", name=display) if enabling
+                   else t("confirm_disable_account", name=display))
+
+    async def push_to_ad(bind_user: str, bind_password: str) -> None:
+        cfg = await ldap_config.get()
+        try:
+            ldap_set_account_enabled(
+                dn=person.ldap_dn, enabled=enabling,
+                bind_username=bind_user, bind_password=bind_password,
+                ldap_cfg=cfg,
+            )
+        except LdapModifyError as e:
+            ui.notify(t("disable_failed", error=str(e)), color="negative", multi_line=True)
+            return
+        async with _session_scope() as session:
+            db_person = await session.get(User, person.id)
+            if db_person is not None:
+                db_person.is_active = enabling
+                await session.commit()
+        await log_audit(
+            "users", "enable" if enabling else "disable",
+            actor_id=current_user.id, actor_email=current_user.email,
+            target_type="user", target_id=person.id,
+            detail=f"ad_dn={person.ldap_dn}",
+        )
+        ui.notify(
+            t("account_enabled" if enabling else "account_disabled", name=display),
+            color="positive",
+        )
+        container.parent_slot.parent.set_visibility(False)
+
+    def open_creds_prompt() -> None:
+        creds_dialog = ui.dialog()
+        with creds_dialog, ui.card():
+            ui.label(t("admin_ad_credentials"))
+            username_input = ui.input(t("ad_admin_username")).props("outlined dense")
+            password_input = ui.input(t("password"), password=True).props("outlined dense")
+
+            async def submit():
+                bind_user = username_input.value.strip()
+                if not bind_user or not password_input.value:
+                    return
+                creds_dialog.close()
+                await push_to_ad(bind_user, password_input.value)
+
+            with ui.row():
+                ui.button(t("submit"), on_click=submit).props("flat color=primary")
+                ui.button(t("cancel"), on_click=creds_dialog.close).props("flat")
+        creds_dialog.open()
+
+    confirm_dialog = ui.dialog()
+    with confirm_dialog, ui.card():
+        ui.label(confirm_msg)
+        with ui.row():
+            ui.button(t("cancel"), on_click=confirm_dialog.close).props("flat")
+
+            def on_confirm():
+                confirm_dialog.close()
+                open_creds_prompt()
+
+            ui.button(label, on_click=on_confirm).props(f"flat color={color}")
+
+    ui.button(label, icon=icon, on_click=confirm_dialog.open).props(
+        f"flat dense color={color}"
+    )
 
 
 def _is_ad_writable(field_name: str, ad_writable: set[str] | None) -> bool:

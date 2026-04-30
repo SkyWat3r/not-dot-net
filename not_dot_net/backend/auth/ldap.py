@@ -425,6 +425,43 @@ def ldap_check_and_modify(
         conn.unbind()
 
 
+def ldap_set_account_enabled(
+    dn: str,
+    enabled: bool,
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> None:
+    """Bind as bind_username and toggle the ACCOUNTDISABLE bit on dn.
+
+    Reads the current userAccountControl, OR/AND the ACCOUNTDISABLE bit
+    (0x2), and writes the new value back via MODIFY_REPLACE. Other UAC
+    flags (DONT_EXPIRE_PASSWORD, PASSWD_NOTREQD, etc.) are preserved.
+    No-op when the desired state already matches.
+    """
+    conn = _ldap_bind(bind_username, bind_password, ldap_cfg, connect)
+    try:
+        ok = conn.search(dn, "(objectClass=*)", attributes=["userAccountControl"])
+        if not ok or not conn.entries:
+            raise LdapModifyError(f"User not found: {dn}")
+        current = conn.entries[0].userAccountControl.value
+        if current is None:
+            raise LdapModifyError(f"userAccountControl not readable for {dn}")
+        current_int = int(current)
+        new_int = (current_int & ~_ACCOUNTDISABLE) if enabled else (current_int | _ACCOUNTDISABLE)
+        if new_int == current_int:
+            return
+        ok = conn.modify(dn, {"userAccountControl": [(MODIFY_REPLACE, [str(new_int)])]})
+        if not ok:
+            raise LdapModifyError(
+                f"modify failed: {conn.result.get('description')} "
+                f"({conn.result.get('message')})"
+            )
+    finally:
+        conn.unbind()
+
+
 def ldap_modify_user(
     dn: str,
     changes: dict[str, str | None],

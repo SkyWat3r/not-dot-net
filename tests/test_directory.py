@@ -89,6 +89,92 @@ async def test_load_people_sorted_by_display_name_case_insensitive():
     assert sortable_names == sorted(sortable_names)
 
 
+async def test_disable_button_visible_for_superuser_on_ad_user(user: User):
+    """Superuser viewing an AD user (not self) sees the Disable button."""
+    from nicegui import ui
+    from not_dot_net.backend.db import User as UserModel, AuthMethod
+    from not_dot_net.frontend.directory import _render_detail
+
+    import uuid
+    superuser = UserModel(
+        id=uuid.uuid4(),
+        email="root@test", hashed_password="x", is_active=True, is_superuser=True,
+        full_name="Root", role="admin",
+    )
+    ad_target = UserModel(
+        id=uuid.uuid4(),
+        email="alice@example.com", hashed_password="!ldap-no-local-password",
+        is_active=True, full_name="Alice",
+        auth_method=AuthMethod.LDAP, ldap_dn="cn=alice,dc=example,dc=com",
+    )
+
+    @ui.page("/_disable_button_super_ad")
+    async def _page():
+        container = ui.column()
+        with container:
+            await _render_detail(container, ad_target, superuser, state={})
+
+    await user.open("/_disable_button_super_ad")
+    await user.should_see("Disable account")
+
+
+async def test_disable_button_hidden_for_non_superuser(user: User):
+    """A regular admin (not superuser) should NOT see the Disable button."""
+    from nicegui import ui
+    from not_dot_net.backend.db import User as UserModel, AuthMethod
+    from not_dot_net.frontend.directory import _render_detail
+
+    import uuid
+    admin = UserModel(
+        id=uuid.uuid4(),
+        email="admin@test", hashed_password="x", is_active=True,
+        is_superuser=False, full_name="Admin", role="admin",
+    )
+    ad_target = UserModel(
+        id=uuid.uuid4(),
+        email="alice2@example.com", hashed_password="!ldap-no-local-password",
+        is_active=True, full_name="Alice2",
+        auth_method=AuthMethod.LDAP, ldap_dn="cn=alice2,dc=example,dc=com",
+    )
+
+    @ui.page("/_disable_button_admin")
+    async def _page():
+        container = ui.column()
+        with container:
+            await _render_detail(container, ad_target, admin, state={})
+
+    await user.open("/_disable_button_admin")
+    await user.should_not_see("Disable account")
+
+
+async def test_disable_button_hidden_for_local_user(user: User):
+    """The button must not appear for local (non-AD) users even for a superuser."""
+    from nicegui import ui
+    from not_dot_net.backend.db import User as UserModel, AuthMethod
+    from not_dot_net.frontend.directory import _render_detail
+
+    import uuid
+    superuser = UserModel(
+        id=uuid.uuid4(),
+        email="root2@test", hashed_password="x", is_active=True, is_superuser=True,
+        full_name="Root2", role="admin",
+    )
+    local_target = UserModel(
+        id=uuid.uuid4(),
+        email="bob@test", hashed_password="x", is_active=True, full_name="Bob",
+        auth_method=AuthMethod.LOCAL,
+    )
+
+    @ui.page("/_disable_button_local")
+    async def _page():
+        container = ui.column()
+        with container:
+            await _render_detail(container, local_target, superuser, state={})
+
+    await user.open("/_disable_button_local")
+    await user.should_not_see("Disable account")
+
+
 def test_classify_updates_splits_ad_and_local_fields():
     updates = {
         "phone": "+33999",
