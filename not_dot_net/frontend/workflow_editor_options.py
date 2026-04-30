@@ -78,6 +78,7 @@ def event_options() -> list[dict]:
         {"value": "approve", "label": "When approved"},
         {"value": "reject", "label": "When rejected"},
         {"value": "request_corrections", "label": "When changes are requested"},
+        {"value": "complete", "label": "When completed"},
         {"value": "cancel", "label": "When cancelled"},
     ]
 

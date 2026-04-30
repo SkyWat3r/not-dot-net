@@ -62,16 +62,17 @@ def test_recipient_options_value_format():
     assert "permission:manage_users" in by_value
 
 
-def test_event_options_five_engine_events():
+def test_event_options_six_engine_events():
     opts = event_options()
     values = [o["value"] for o in opts]
-    assert values == ["submit", "approve", "reject", "request_corrections", "cancel"]
+    assert values == ["submit", "approve", "reject", "request_corrections", "complete", "cancel"]
     labels = [o["label"] for o in opts]
     assert labels == [
         "When submitted",
         "When approved",
         "When rejected",
         "When changes are requested",
+        "When completed",
         "When cancelled",
     ]
 

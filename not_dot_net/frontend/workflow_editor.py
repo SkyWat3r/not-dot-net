@@ -498,7 +498,8 @@ class WorkflowEditorDialog:
                  on_change=lambda e, w=wf_key, k=step.key: self._safe_set(w, k, "key", e.value)
                  ).classes("w-full").props("dense outlined stack-label")
 
-        ui.select(["form", "approval"], value=step.type, label="type",
+        ui.select({"form": t("step_type_form"), "approval": t("step_type_approval")},
+                  value=step.type, label="Type",
                   on_change=lambda e, w=wf_key, k=step.key: self.set_step_field(w, k, "type", e.value)
                   ).classes("w-full").props("dense outlined stack-label")
 
@@ -559,6 +560,7 @@ class WorkflowEditorDialog:
         kind_select.on_value_change(lambda e, _r=_render_sub_select: _r(e.value))
 
         # actions
+        ui.label(t("step_actions")).classes("text-subtitle2 q-mt-sm")
         actions_widget = chip_list_editor(step.actions,
                                           suggestions=["submit", "approve", "reject", "request_corrections", "cancel"])
 
@@ -567,13 +569,13 @@ class WorkflowEditorDialog:
             self._refresh_detail()  # corrections_target visibility may change
         actions_widget.on_value_change(lambda e, _b=_bind_actions: _b())
 
-        ui.switch("partial_save", value=step.partial_save,
+        ui.switch(t("step_partial_save"), value=step.partial_save,
                   on_change=lambda e, w=wf_key, k=step.key: self.set_step_field(w, k, "partial_save", e.value))
 
         if "request_corrections" in (step.actions or []):
             wf = self.working_copy.workflows[wf_key]
             other_keys = [s.key for s in wf.steps if s.key != step.key]
-            ui.select([None, *other_keys], value=step.corrections_target, label="corrections_target",
+            ui.select([None, *other_keys], value=step.corrections_target, label=t("step_corrections_target"),
                       on_change=lambda e, w=wf_key, k=step.key: self.set_step_field(w, k, "corrections_target", e.value)
                       ).classes("w-full").props("dense outlined stack-label")
 
