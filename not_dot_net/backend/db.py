@@ -1,11 +1,11 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
 from enum import Enum as PyEnum
 
 from fastapi import Depends
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID, SQLAlchemyUserDatabase
-from sqlalchemy import Date, Enum as SAEnum, JSON, LargeBinary, String
+from sqlalchemy import Date, DateTime, Enum as SAEnum, JSON, LargeBinary, String
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -54,6 +54,9 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
     ldap_dn: Mapped[str | None] = mapped_column(default=None)
     ldap_username: Mapped[str | None] = mapped_column(default=None)
+    last_ad_logon: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
 
 _engine: AsyncEngine | None = None

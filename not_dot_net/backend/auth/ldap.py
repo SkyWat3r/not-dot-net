@@ -35,7 +35,7 @@ AD_ATTR_MAP: dict[str, str] = {
 _AD_READ_ONLY = [
     "givenName", "sn", "userPrincipalName", "sAMAccountName",
     "memberOf", "thumbnailPhoto", "uidNumber", "gidNumber",
-    "userAccountControl", "accountExpires",
+    "userAccountControl", "accountExpires", "lastLogonTimestamp",
 ]
 
 _AD_ATTRIBUTES = list(AD_ATTR_MAP.values()) + _AD_READ_ONLY
@@ -134,6 +134,7 @@ class LdapUserInfo:
     photo: bytes | None = None
     uid_number: int | None = None
     gid_number: int | None = None
+    last_logon_timestamp: datetime | None = None
     is_active: bool = True
 
 
@@ -214,6 +215,30 @@ def _attr_int(entry, name: str) -> int | None:
         return None
     val = attr.value
     return int(val) if val is not None else None
+
+
+def _attr_filetime(entry, name: str) -> datetime | None:
+    """Parse an AD FILETIME attribute (e.g. lastLogonTimestamp) to UTC datetime.
+
+    ldap3 sometimes auto-converts FILETIME to datetime; otherwise the raw
+    value is a 64-bit int counting 100-ns intervals since 1601-01-01 UTC.
+    Sentinel 0 / max-int means "never" — returns None.
+    """
+    attr = getattr(entry, name, None)
+    if attr is None:
+        return None
+    val = attr.value
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        if val.year <= 1601 or val.year >= 9999:
+            return None
+        return val if val.tzinfo else val.replace(tzinfo=timezone.utc)
+    if isinstance(val, int):
+        if val in _ACCOUNT_EXPIRES_NEVER:
+            return None
+        return (_FILETIME_EPOCH + timedelta(microseconds=val // 10)).replace(tzinfo=timezone.utc)
+    return None
 
 
 def ldap_authenticate(
@@ -509,6 +534,7 @@ _INFO_TO_USER: dict[str, str] = {
     "photo":             "photo",
     "uid_number":        "uid_number",
     "gid_number":        "gid_number",
+    "last_logon_timestamp": "last_ad_logon",
 }
 
 
@@ -583,6 +609,7 @@ def _entry_to_user_info(entry, fallback_email: str | None = None) -> LdapUserInf
         photo=_attr_bytes(entry, "thumbnailPhoto"),
         uid_number=_attr_int(entry, "uidNumber"),
         gid_number=_attr_int(entry, "gidNumber"),
+        last_logon_timestamp=_attr_filetime(entry, "lastLogonTimestamp"),
         is_active=_ad_account_active(entry),
     )
 

@@ -233,6 +233,10 @@ async def _render_detail(container, person: User, current_user: User, state: dic
                 cn_names = [dn.split(",")[0].removeprefix("CN=") for dn in person.member_of]
                 ui.label(f"{t('member_of')}: {', '.join(cn_names)}").classes("text-sm text-gray-500")
 
+        if current_user.is_superuser and person.last_ad_logon is not None:
+            stamp = person.last_ad_logon.strftime("%Y-%m-%d %H:%M UTC")
+            ui.label(f"{t('last_ad_logon')}: {stamp}").classes("text-sm text-gray-500")
+
         if is_own or is_admin:
             async def do_edit():
                 await _render_edit(container, person, current_user, state)
