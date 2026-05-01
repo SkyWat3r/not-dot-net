@@ -15,6 +15,7 @@ from not_dot_net.frontend.bookings import render as render_bookings
 from not_dot_net.frontend.pages import render as render_pages
 from not_dot_net.frontend.directory import render as render_directory
 from not_dot_net.frontend.dashboard import render as render_dashboard
+from not_dot_net.frontend.user_management import render as render_user_management
 from not_dot_net.frontend.new_request import render as render_new_request
 from not_dot_net.frontend.i18n import SUPPORTED_LOCALES, get_locale, set_locale, t
 
@@ -49,9 +50,11 @@ def setup():
         pages_label = t("pages")
         audit_label = t("audit_log")
         settings_label = t("settings")
+        users_label = t("user_management")
 
         can_create = await has_permissions(effective_user, "create_workflows") if logged_in else False
         is_admin = await has_permissions(effective_user, "manage_settings") if logged_in else False
+        is_superuser = bool(getattr(effective_user, "is_superuser", False))
 
         available_tabs = [dashboard_label, people_label, bookings_label, pages_label]
         if can_create:
@@ -59,6 +62,8 @@ def setup():
         if is_admin:
             available_tabs.append(audit_label)
             available_tabs.append(settings_label)
+        if is_superuser:
+            available_tabs.append(users_label)
         saved_tab = app.storage.user.get("active_tab")
         initial_tab = saved_tab if saved_tab in available_tabs else dashboard_label
 
@@ -77,6 +82,8 @@ def setup():
                 if is_admin:
                     ui.tab(audit_label, icon="policy")
                     ui.tab(settings_label, icon="settings")
+                if is_superuser:
+                    ui.tab(users_label, icon="manage_accounts")
 
             def on_tab_change(e):
                 app.storage.user["active_tab"] = e.value
@@ -119,6 +126,9 @@ def setup():
                     render_audit()
                 with ui.tab_panel(settings_label):
                     await render_settings(effective_user)
+            if is_superuser:
+                with ui.tab_panel(users_label):
+                    await render_user_management(effective_user)
 
         if logged_in:
             from not_dot_net.backend.workflow_service import get_actionable_count
