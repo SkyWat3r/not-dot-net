@@ -4,6 +4,7 @@ import pytest
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date
+from unittest.mock import AsyncMock, patch
 
 from not_dot_net.backend.db import User, session_scope, get_user_db
 from not_dot_net.backend.users import get_user_manager
@@ -17,14 +18,14 @@ async def _create_user(email="user@test.com", password="Password1!") -> User:
                 return await manager.create(UserCreate(email=email, password=password))
 
 
-async def _update_user(user_id, updates: dict):
+async def _update_user(user_id, updates: dict, actor_email: str | None = None):
     """Mirror of directory.py _update_user."""
     async with session_scope() as session:
         async with asynccontextmanager(get_user_db)(session) as user_db:
             async with asynccontextmanager(get_user_manager)(user_db) as manager:
                 user = await manager.get(user_id)
                 update_schema = UserUpdate(**updates)
-                await manager.update(update_schema, user)
+                await manager.update(update_schema, user, actor_email=actor_email)
 
 
 async def _delete_user(user_id):
@@ -128,7 +129,16 @@ async def test_update_user_active_flag():
 
 async def test_update_user_role():
     user = await _create_user()
-    await _update_user(user.id, {"role": "admin"})
+    with patch(
+        "not_dot_net.backend.security_alerts.notify_superuser_granted",
+        new=AsyncMock(return_value=["root@test.com"]),
+    ) as notify_mock:
+        await _update_user(user.id, {"role": "admin"})
+
+    notify_mock.assert_awaited_once()
+    args, kwargs = notify_mock.await_args
+    assert args[0].email == user.email
+    assert kwargs == {}
     async with session_scope() as session:
         refreshed = await session.get(User, user.id)
         assert refreshed.role == "admin"
@@ -137,12 +147,68 @@ async def test_update_user_role():
 
 async def test_update_user_role_demotion_clears_superuser():
     user = await _create_user()
-    await _update_user(user.id, {"role": "admin"})
-    await _update_user(user.id, {"role": "member"})
+    with patch(
+        "not_dot_net.backend.security_alerts.notify_superuser_granted",
+        new=AsyncMock(return_value=["root@test.com"]),
+    ) as notify_mock:
+        await _update_user(user.id, {"role": "admin"})
+        await _update_user(user.id, {"role": "member"})
+
+    notify_mock.assert_awaited_once()
     async with session_scope() as session:
         refreshed = await session.get(User, user.id)
         assert refreshed.role == "member"
         assert refreshed.is_superuser is False
+
+
+async def test_update_user_role_admin_does_not_alert_when_already_superuser():
+    user = await _create_user()
+    async with session_scope() as session:
+        db_user = await session.get(User, user.id)
+        db_user.is_superuser = True
+        await session.commit()
+
+    with patch(
+        "not_dot_net.backend.security_alerts.notify_superuser_granted",
+        new=AsyncMock(return_value=["root@test.com"]),
+    ) as notify_mock:
+        await _update_user(user.id, {"role": "admin"})
+
+    notify_mock.assert_not_awaited()
+
+
+async def test_update_user_direct_superuser_grant_emits_security_alert():
+    user = await _create_user()
+
+    with patch(
+        "not_dot_net.backend.security_alerts.notify_superuser_granted",
+        new=AsyncMock(return_value=["root@test.com"]),
+    ) as notify_mock:
+        await _update_user(user.id, {"is_superuser": True})
+
+    notify_mock.assert_awaited_once()
+    args, kwargs = notify_mock.await_args
+    assert args[0].email == user.email
+    assert kwargs == {}
+
+
+async def test_update_user_superuser_grant_passes_actor_email():
+    user = await _create_user()
+
+    with patch(
+        "not_dot_net.backend.security_alerts.notify_superuser_granted",
+        new=AsyncMock(return_value=["root@test.com"]),
+    ) as notify_mock:
+        await _update_user(
+            user.id,
+            {"is_superuser": True},
+            actor_email="actor@test.com",
+        )
+
+    notify_mock.assert_awaited_once()
+    args, kwargs = notify_mock.await_args
+    assert args[0].email == user.email
+    assert kwargs == {"actor_email": "actor@test.com"}
 
 
 async def test_delete_user():

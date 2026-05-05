@@ -101,10 +101,19 @@ async def _set_role(query: str, role: str):
             print(f"Error: no user matching '{query}'.")
             raise SystemExit(1)
         old_role = user.role
+        was_superuser = bool(user.is_superuser)
         user.role = role
         user.is_superuser = (role == "admin")
         await session.commit()
+        await _notify_cli_superuser_grant_if_needed(user, was_superuser)
         print(f"'{user.email}' ({user.full_name or '-'}): {old_role or '(none)'} → {role}")
+
+
+async def _notify_cli_superuser_grant_if_needed(user, was_superuser: bool) -> None:
+    if was_superuser or not user.is_superuser:
+        return
+    from not_dot_net.backend.security_alerts import notify_superuser_granted
+    await notify_superuser_granted(user, actor_email="cli")
 
 
 @app.command
@@ -281,6 +290,9 @@ def create_user(
                     user.role = role
                     session.add(user)
                     await session.commit()
+                    if user.is_superuser:
+                        from not_dot_net.backend.security_alerts import notify_superuser_granted
+                        await notify_superuser_granted(user, actor_email="cli")
                     print(f"User '{user.email}' created with role '{role}'.")
 
     asyncio.run(_create())
