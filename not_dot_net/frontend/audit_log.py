@@ -27,10 +27,9 @@ SEVERITY_LABEL_KEY = {
     "red": "audit_severity_critical",
 }
 
-# Severity drives off (category, action) and metadata_json — never off the
-# free-form `detail` string. The only exception is settings update/reset
-# where the section name comes through detail today (`section={prefix}`),
-# and we match it exactly.
+# Severity drives off (category, action) and metadata_json, not the free-form
+# detail string. Settings update/reset is the current exception because the
+# section still comes through as detail (`section={prefix}`), matched exactly.
 _CRITICAL_SETTINGS_SECTIONS = {"section=roles", "section=ldap"}
 
 TIME_PERIOD_DAYS = {
@@ -50,10 +49,7 @@ def _since_from_period(period_key: str) -> datetime | None:
 
 
 def _audit_severity(ev) -> str:
-    """Classify an audit event into a severity color. Driven off
-    (category, action) and `metadata_json` — the human-readable `detail`
-    string is consulted only for settings sections (where we match exactly,
-    never with `in`)."""
+    """Classify an audit event into a severity color."""
     cat, action = ev.category, ev.action
     meta = ev.metadata_json or {}
 
@@ -90,8 +86,7 @@ def _audit_severity(ev) -> str:
 
 
 def _relative_time_label(dt: datetime | None, *, now: datetime | None = None) -> str:
-    """Compact 'today/yesterday/before yesterday/N days ago' label.
-    `now` is overridable for testing."""
+    """Compact today/yesterday/before-yesterday/N-days-ago label."""
     if dt is None:
         return ""
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
@@ -169,7 +164,6 @@ async def _render_log(
     with container:
         ui.label(t("audit_log")).classes("text-h6 mb-2")
 
-        # Filters
         with ui.row().classes("items-end gap-2 mb-3"):
             period_select = ui.select(
                 options=period_options,
@@ -258,7 +252,6 @@ async def _render_log(
             ui.label(t("no_events")).classes("text-grey")
             return
 
-        # Table
         columns = [
             {"name": "time", "label": t("time"), "field": "time", "sortable": True, "align": "left"},
             {"name": "category", "label": t("category"), "field": "category", "sortable": True, "align": "left"},
@@ -284,9 +277,8 @@ async def _render_log(
         ).classes("w-full")
         table.props("flat bordered dense")
 
-        # NOTE: this `body` slot replaces the entire row template — any new
-        # column added to `columns` above must also be added below or it
-        # will silently disappear from the rendered table.
+        # This `body` slot replaces the full row template. Any new column added
+        # above must also be rendered below.
         table.add_slot("body", r'''
             <q-tr :props="props" :style="{ backgroundColor: props.row.severity_row }">
                 <q-td key="time" :props="props">{{ props.row.time }}</q-td>

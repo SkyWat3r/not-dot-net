@@ -59,14 +59,14 @@ async def _load_people(include_inactive: bool = False) -> list[User]:
         return result.scalars().all()
 
 
-async def _update_user(user_id, updates: dict):
+async def _update_user(user_id, updates: dict, actor_email: str | None = None):
     """Update a user via UserManager (respects FastAPI-Users hooks)."""
     async with session_scope() as session:
         async with asynccontextmanager(get_user_db)(session) as user_db:
             async with asynccontextmanager(get_user_manager)(user_db) as manager:
                 user = await manager.get(user_id)
                 update_schema = UserUpdate(**updates)
-                await manager.update(update_schema, user)
+                await manager.update(update_schema, user, actor_email=actor_email)
 
 
 async def _delete_user(user_id):
@@ -519,7 +519,7 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
                         )
                         return
 
-            await _update_user(person.id, diff)
+            await _update_user(person.id, diff, actor_email=current_user.email)
             from not_dot_net.backend.audit import log_audit
             current_values = {k: getattr(person, k) for k in diff}
             changes = {

@@ -1,8 +1,10 @@
 """Integration tests for local auth endpoints (login)."""
 
+import asyncio
 import pytest
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from not_dot_net.backend.db import User, session_scope, get_user_db
 from not_dot_net.backend.audit import list_audit_events
@@ -246,22 +248,31 @@ async def test_superuser_successful_login_emits_audit_with_ip_role_metadata():
         db_user.role = "security_admin"
         await session.commit()
 
-    async with session_scope() as session:
-        async with asynccontextmanager(get_user_db)(session) as user_db:
-            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
-                response = await handle_login(
-                    _FakeRequest(
-                        {
-                            "username": "admin-success@test.com",
-                            "password": "CorrectPassword1!",
-                        },
-                        client_host="10.0.0.24",
-                        headers={"user-agent": "pytest-browser"},
-                    ),
-                    user_manager=user_manager,
-                )
+    with patch(
+        "not_dot_net.backend.security_alerts.notify_superuser_login_success",
+        new=AsyncMock(return_value=["root@test.com"]),
+    ) as notify_mock:
+        async with session_scope() as session:
+            async with asynccontextmanager(get_user_db)(session) as user_db:
+                async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
+                    response = await handle_login(
+                        _FakeRequest(
+                            {
+                                "username": "admin-success@test.com",
+                                "password": "CorrectPassword1!",
+                            },
+                            client_host="10.0.0.24",
+                            headers={"user-agent": "pytest-browser"},
+                        ),
+                        user_manager=user_manager,
+                    )
 
     assert response.status_code == 303
+    await asyncio.sleep(0)
+    notify_mock.assert_awaited_once()
+    args, kwargs = notify_mock.await_args
+    assert args[0].email == "admin-success@test.com"
+    assert kwargs == {"ip": "10.0.0.24", "user_agent": "pytest-browser"}
     events = await list_audit_events(category="auth", action="login")
     assert len(events) == 1
     assert events[0].actor_email == "admin-success@test.com"
@@ -301,20 +312,29 @@ async def test_superuser_failed_login_emits_audit_with_ip_metadata():
         db_user.is_superuser = True
         await session.commit()
 
-    async with session_scope() as session:
-        async with asynccontextmanager(get_user_db)(session) as user_db:
-            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
-                response = await handle_login(
-                    _FakeRequest(
-                        {"username": "admin-fail@test.com", "password": "WrongPassword!"},
-                        client_host="10.0.0.42",
-                        headers={"user-agent": "pytest-browser"},
-                    ),
-                    user_manager=user_manager,
-                )
+    with patch(
+        "not_dot_net.backend.security_alerts.notify_superuser_login_failed",
+        new=AsyncMock(return_value=["root@test.com"]),
+    ) as notify_mock:
+        async with session_scope() as session:
+            async with asynccontextmanager(get_user_db)(session) as user_db:
+                async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
+                    response = await handle_login(
+                        _FakeRequest(
+                            {"username": "admin-fail@test.com", "password": "WrongPassword!"},
+                            client_host="10.0.0.42",
+                            headers={"user-agent": "pytest-browser"},
+                        ),
+                        user_manager=user_manager,
+                    )
 
     assert response.status_code == 303
     assert response.headers["location"] == "/login?error=1"
+    await asyncio.sleep(0)
+    notify_mock.assert_awaited_once()
+    args, kwargs = notify_mock.await_args
+    assert args[0].email == "admin-fail@test.com"
+    assert kwargs == {"ip": "10.0.0.42", "user_agent": "pytest-browser"}
     events = await list_audit_events(category="auth", action="login")
     assert len(events) == 1
     assert events[0].actor_email == "admin-fail@test.com"

@@ -15,6 +15,8 @@ from fastapi_users.authentication import (
 )
 from fastapi_users.db import SQLAlchemyUserDatabase
 
+from not_dot_net.backend.audit import log_audit, request_ip, request_user_agent
+from not_dot_net.backend import security_alerts
 from not_dot_net.backend.db import User, get_user_db
 from not_dot_net.backend.secrets import AppSecrets
 
@@ -56,12 +58,12 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         logger.info("User %s registered", user.id)
 
     async def on_after_login(self, user: User, request: Request | None = None, response=None):
-        from not_dot_net.backend.audit import log_audit, request_ip, request_user_agent
         if not user.is_superuser:
             await log_audit("auth", "login", actor_id=user.id, actor_email=user.email)
             return
 
         ip = request_ip(request)
+        user_agent = request_user_agent(request)
         await log_audit(
             "auth", "login",
             actor_id=user.id,
@@ -69,17 +71,47 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             detail=f"Login Success ip={ip or 'unknown'} role={user.role or '(none)'} is_superuser=True",
             metadata={
                 "ip": ip,
-                "user_agent": request_user_agent(request),
+                "user_agent": user_agent,
                 "role": user.role,
                 "is_superuser": True,
                 "success": True,
             },
         )
+        security_alerts.queue_security_alert(
+            security_alerts.notify_superuser_login_success(
+                user,
+                ip=ip,
+                user_agent=user_agent,
+            )
+        )
+
+    async def update(
+        self,
+        user_update,
+        user: User,
+        safe: bool = False,
+        request: Request | None = None,
+        actor_email: str | None = None,
+    ) -> User:
+        # FastAPI-Users does not provide the actor on update hooks; callers that
+        # have request context can pass it for security alert emails.
+        was_superuser = user.is_superuser
+        updated_user = await super().update(user_update, user, safe=safe, request=request)
+        if not was_superuser and updated_user.is_superuser:
+            if actor_email is None:
+                await security_alerts.notify_superuser_granted(updated_user)
+            else:
+                await security_alerts.notify_superuser_granted(
+                    updated_user,
+                    actor_email=actor_email,
+                )
+        return updated_user
 
     async def on_after_update(self, user: User, update_dict: dict, request: Request | None = None):
         if "role" in update_dict:
-            user.is_superuser = (user.role == "admin")
-            await self.user_db.update(user, {"is_superuser": user.role == "admin"})
+            is_now_superuser = user.role == "admin"
+            user.is_superuser = is_now_superuser
+            await self.user_db.update(user, {"is_superuser": is_now_superuser})
 
 
 async def get_user_manager(
