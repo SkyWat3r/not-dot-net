@@ -74,6 +74,7 @@ async def render(user):
             if prefix == "ldap":
                 _render_ldap_sync(user)
             if prefix == "mail":
+                _render_mail_test(user)
                 await _render_mail_outbox(user)
 
 
@@ -284,6 +285,31 @@ def _render_ldap_sync(user):
         dialog.open()
 
     ui.button(t("sync_ad_users"), icon="sync", on_click=open_sync_dialog).props("color=primary")
+
+
+def _render_mail_test(user):
+    """Synchronous SMTP test: bypasses dev_mode and the outbox queue so
+    the admin gets immediate success/failure feedback for the current
+    SMTP config."""
+    with ui.row().classes("w-full items-center gap-2 mt-4"):
+        recipient = ui.input(
+            t("mail_test_recipient"),
+            value=getattr(user, "email", "") or "",
+        ).props("dense outlined stack-label").classes("grow")
+
+        async def _send():
+            from not_dot_net.backend.mail_outbox import send_test_mail
+            target = (recipient.value or "").strip()
+            if not target:
+                return
+            try:
+                await send_test_mail(target)
+            except Exception as exc:
+                ui.notify(f"{t('mail_test_failed')}: {exc}", color="negative", multi_line=True)
+                return
+            ui.notify(t("mail_test_success"), color="positive")
+
+        ui.button(t("mail_test_send"), icon="send", on_click=_send).props("color=primary")
 
 
 async def _render_mail_outbox(user):

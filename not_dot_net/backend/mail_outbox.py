@@ -51,6 +51,27 @@ class MailOutbox(MappedAsDataclass, Base, kw_only=True):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
 
 
+async def _smtp_send(to: str, subject: str, body_html: str, mail_cfg) -> None:
+    """Send one mail via aiosmtplib. Raises on SMTP error.
+
+    Honors `dev_catch_all` (overrides `to`). Does NOT honor `dev_mode` —
+    the caller decides whether to short-circuit for dev mode.
+    """
+    msg = EmailMessage()
+    msg["From"] = mail_cfg.from_address
+    msg["To"] = mail_cfg.dev_catch_all or to
+    msg["Subject"] = subject
+    msg.set_content(body_html, subtype="html")
+    await aiosmtplib.send(
+        msg,
+        hostname=mail_cfg.smtp_host,
+        port=mail_cfg.smtp_port,
+        start_tls=mail_cfg.smtp_tls,
+        username=mail_cfg.smtp_user or None,
+        password=mail_cfg.smtp_password or None,
+    )
+
+
 async def _send_one(row: MailOutbox, mail_cfg) -> None:
     """Attempt to deliver one row. Mutates `row` in place; the caller commits."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -63,21 +84,8 @@ async def _send_one(row: MailOutbox, mail_cfg) -> None:
         row.sent_at = now
         return
 
-    msg = EmailMessage()
-    msg["From"] = mail_cfg.from_address
-    msg["To"] = mail_cfg.dev_catch_all or row.to_address
-    msg["Subject"] = row.subject
-    msg.set_content(row.body_html, subtype="html")
-
     try:
-        await aiosmtplib.send(
-            msg,
-            hostname=mail_cfg.smtp_host,
-            port=mail_cfg.smtp_port,
-            start_tls=mail_cfg.smtp_tls,
-            username=mail_cfg.smtp_user or None,
-            password=mail_cfg.smtp_password or None,
-        )
+        await _smtp_send(row.to_address, row.subject, row.body_html, mail_cfg)
         row.sent_at = now
     except Exception as exc:
         row.attempts += 1
@@ -86,6 +94,26 @@ async def _send_one(row: MailOutbox, mail_cfg) -> None:
             row.failed_at = now
         else:
             row.next_attempt_at = now + BACKOFF[row.attempts - 1]
+
+
+async def send_test_mail(to: str) -> None:
+    """Send a synchronous test email to verify SMTP config.
+
+    Bypasses both dev_mode and the outbox queue: the admin is verifying
+    that the SMTP server is reachable RIGHT NOW with current settings,
+    and wants the success/failure answer in the same click. Any SMTP
+    exception propagates to the caller for display.
+    """
+    from not_dot_net.backend.mail import mail_config
+    from not_dot_net.config import org_config
+
+    mail_cfg = await mail_config.get()
+    org_cfg = await org_config.get()
+    app_name = (org_cfg.app_name or "not-dot-net").strip() or "not-dot-net"
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    subject = f"[{app_name}] SMTP test"
+    body = f"<p>Test email sent at {now_utc}.</p>"
+    await _smtp_send(to, subject, body, mail_cfg)
 
 
 async def _drain_outbox_once() -> int:

@@ -339,3 +339,45 @@ async def test_run_outbox_worker_processes_pending_then_sleeps():
         pass
 
     assert row.sent_at is not None
+
+
+async def test_send_test_mail_uses_smtp_directly_and_does_not_enqueue():
+    """send_test_mail bypasses both dev_mode and the outbox queue:
+    it makes a synchronous aiosmtplib call so the admin gets immediate
+    feedback."""
+    from unittest.mock import AsyncMock, patch
+    from not_dot_net.backend.mail import mail_config, MailConfig
+    from not_dot_net.backend.mail_outbox import send_test_mail
+
+    cfg = await mail_config.get()
+    await mail_config.set(MailConfig(**{**cfg.model_dump(), "dev_mode": True}))
+
+    with patch(
+        "not_dot_net.backend.mail_outbox.aiosmtplib.send",
+        new=AsyncMock(),
+    ) as mock_send:
+        await send_test_mail("admin@test.local")
+
+    mock_send.assert_awaited_once()
+    msg = mock_send.await_args.args[0]
+    assert msg["To"] == "admin@test.local"
+    assert "SMTP test" in msg["Subject"]
+    body_part = msg.get_body(preferencelist=("html",))
+    assert "Test email sent at" in body_part.get_content()
+
+    async with session_scope() as session:
+        rows = (await session.execute(select(MailOutbox))).scalars().all()
+    assert list(rows) == []  # no row queued for a test send
+
+
+async def test_send_test_mail_propagates_smtp_failures():
+    """Any SMTP exception bubbles up so the UI can show the error."""
+    from unittest.mock import AsyncMock, patch
+    from not_dot_net.backend.mail_outbox import send_test_mail
+
+    with patch(
+        "not_dot_net.backend.mail_outbox.aiosmtplib.send",
+        new=AsyncMock(side_effect=ConnectionRefusedError("localhost:587")),
+    ):
+        with pytest.raises(ConnectionRefusedError):
+            await send_test_mail("admin@test.local")
