@@ -173,12 +173,12 @@ async def test_send_one_dev_mode_does_not_leak_body_or_tokens(caplog):
     assert row.sent_at is not None
 
 
-async def test_send_one_dev_catch_all_redirect():
+async def test_send_one_dev_catch_all_redirect(caplog):
     """Dev-mode catch_all should redirect logs to the catch-all address
     while preserving the original recipient in the log line."""
     from not_dot_net.backend.mail_outbox import _send_one, MailOutbox
     from not_dot_net.backend.mail import MailConfig
-    import logging as _logging
+    import logging
 
     cfg = MailConfig(dev_mode=True, dev_catch_all="catch@test.local")
     row = MailOutbox(
@@ -188,26 +188,12 @@ async def test_send_one_dev_catch_all_redirect():
         next_attempt_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
-    log_records = []
-
-    class _Capture(_logging.Handler):
-        def emit(self, record):
-            log_records.append(record.getMessage())
-
-    handler = _Capture()
-    logger_obj = _logging.getLogger("not_dot_net.mail_outbox")
-    logger_obj.addHandler(handler)
-    prev_level = logger_obj.level
-    logger_obj.setLevel(_logging.INFO)
-    try:
+    with caplog.at_level(logging.INFO, logger="not_dot_net.mail_outbox"):
         await _send_one(row, cfg)
-    finally:
-        logger_obj.removeHandler(handler)
-        logger_obj.setLevel(prev_level)
 
-    log_line = "\n".join(log_records)
-    assert "catch@test.local" in log_line
-    assert "real-user@test.local" in log_line
+    log_text = "\n".join(r.message for r in caplog.records)
+    assert "catch@test.local" in log_text
+    assert "real-user@test.local" in log_text
     assert row.sent_at is not None
 
 
