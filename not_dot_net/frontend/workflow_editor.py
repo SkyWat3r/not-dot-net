@@ -777,6 +777,16 @@ class WorkflowEditorDialog:
                         warnings.append(
                             f"[{wf_key}/{step.key}/{f.name}] options_key '{f.options_key}' is not an OrgConfig list field"
                         )
+                checkbox_names = {f.name for f in step.fields if f.type == "checkbox"}
+                for f in step.fields:
+                    if not f.visible_when:
+                        continue
+                    for k in f.visible_when:
+                        if k not in checkbox_names:
+                            warnings.append(
+                                f"[{wf_key}/{step.key}/{f.name}] visible_when references "
+                                f"'{k}' which is not a checkbox in the same step"
+                            )
             known_recip_values = {o["value"] for o in recipient_options(self._roles, self._permissions)}
             for nr in wf.notifications:
                 if nr.step and nr.step not in step_keys:

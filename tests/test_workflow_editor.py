@@ -1098,3 +1098,38 @@ async def test_dirty_indicator_visible_after_edit(user: User, admin_user):
     dlg._update_save_dirty_indicator()
     assert dlg._save_dirty_badge is not None
     assert dlg._save_dirty_badge.visible
+
+
+async def test_compute_warnings_flags_dangling_visible_when(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "demo": WorkflowConfig(
+            label="Demo",
+            steps=[WorkflowStepConfig(
+                key="s1", type="form",
+                fields=[
+                    # dangling: 'zrr' does not exist in this step
+                    FieldConfig(name="zrr_topic", type="text",
+                                visible_when={"zrr": True}),
+                    # wrong type: 'status' exists but is not a checkbox
+                    FieldConfig(name="status", type="select"),
+                    FieldConfig(name="cdd_end", type="date",
+                                visible_when={"status": "CDD"}),
+                ],
+                actions=["submit"],
+            )],
+        ),
+    }))
+
+    captured = {}
+
+    @ui.page("/_warn_visible_when")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_warn_visible_when")
+    dlg = captured["dlg"]
+    warnings = dlg.compute_warnings()
+    assert any("zrr_topic" in w and "'zrr'" in w for w in warnings)
+    assert any("cdd_end" in w and "'status'" in w for w in warnings)
