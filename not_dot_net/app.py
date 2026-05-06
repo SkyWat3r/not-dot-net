@@ -76,7 +76,7 @@ def create_app(
         logger.info("Migrations complete")
         _lock_socketio_cors()
 
-    _worker_tasks: set = set()
+    _outbox_task: dict[str, asyncio.Task | None] = {"task": None}
 
     async def startup():
         logger.info("Running async startup...")
@@ -90,9 +90,7 @@ def create_app(
             await seed_fake_users()
 
         from not_dot_net.backend.mail_outbox import run_outbox_worker
-        outbox_task = asyncio.create_task(run_outbox_worker())
-        _worker_tasks.add(outbox_task)
-        outbox_task.add_done_callback(_worker_tasks.discard)
+        _outbox_task["task"] = asyncio.create_task(run_outbox_worker())
         logger.info("Mail outbox worker started")
 
         from not_dot_net.backend.auth.ldap import start_connection_reaper
@@ -101,12 +99,12 @@ def create_app(
 
     async def shutdown():
         logger.info("Shutting down...")
-        for task in list(_worker_tasks):
+        task = _outbox_task["task"]
+        if task is not None:
             task.cancel()
-        for task in list(_worker_tasks):
             try:
                 await task
-            except (Exception, asyncio.CancelledError):
+            except asyncio.CancelledError:
                 pass
         from not_dot_net.backend.auth.ldap import drop_all_connections
         drop_all_connections()
