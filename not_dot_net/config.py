@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel
 
 from not_dot_net.backend.app_config import section
@@ -7,12 +9,22 @@ from not_dot_net.backend.app_config import section
 
 class FieldConfig(BaseModel):
     name: str
-    type: str  # text, email, textarea, date, select, file
+    type: str  # text, email, textarea, date, select, file, phone, location, checkbox
     required: bool = False
     label: str = ""
     options_key: str | None = None  # for select: key in Settings (e.g. "teams")
     encrypted: bool = False
     half_width: bool = False
+    visible_when: dict[str, Any] | None = None
+
+
+def is_field_visible(field: FieldConfig, data: dict) -> bool:
+    """A field is visible iff every (key, value) in `visible_when` matches `data`.
+    No rule means always visible. Missing keys are treated as mismatches."""
+    rule = field.visible_when
+    if not rule:
+        return True
+    return all(data.get(k) == v for k, v in rule.items())
 
 
 class NotificationRuleConfig(BaseModel):

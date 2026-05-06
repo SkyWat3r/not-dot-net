@@ -56,3 +56,30 @@ async def test_onboarding_has_partial_save_step():
     assert newcomer_step.key == "newcomer_info"
     assert newcomer_step.partial_save is True
     assert newcomer_step.assignee == "target_person"
+
+
+async def test_field_config_round_trips_visible_when_and_checkbox():
+    """A FieldConfig with type=checkbox and visible_when serializes and
+    re-parses without loss through the workflows ConfigSection."""
+    from not_dot_net.config import FieldConfig, WorkflowConfig, WorkflowStepConfig
+    from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
+
+    cfg = WorkflowsConfig(workflows={
+        "demo": WorkflowConfig(
+            label="Demo",
+            steps=[WorkflowStepConfig(
+                key="s1", type="form",
+                fields=[
+                    FieldConfig(name="zrr", type="checkbox", label="zrr"),
+                    FieldConfig(name="zrr_topic", type="text", label="zrr_topic",
+                                visible_when={"zrr": True}),
+                ],
+                actions=["submit"],
+            )],
+        ),
+    })
+    await workflows_config.set(cfg)
+    reloaded = await workflows_config.get()
+    fields = reloaded.workflows["demo"].steps[0].fields
+    assert fields[0].type == "checkbox"
+    assert fields[1].visible_when == {"zrr": True}
