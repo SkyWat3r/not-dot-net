@@ -641,6 +641,37 @@ class WorkflowEditorDialog:
                       on_change=lambda e, i=idx, w=wf_key, sk=step_key:
                           self.set_field_attr(w, sk, i, "encrypted", e.value))
 
+            # visible_when picker — same-step checkbox + value, v1
+            wf = self.working_copy.workflows[wf_key]
+            step = next(s for s in wf.steps if s.key == step_key)
+            checkbox_names = [f.name for f in step.fields
+                              if f.type == "checkbox" and f.name != field.name]
+            current_when = field.visible_when or {}
+            current_key = next(iter(current_when), None) if current_when else None
+            current_val = current_when.get(current_key) if current_key else None
+
+            ui.label(t("wf_visible_when_help")).classes("text-sm q-mt-sm")
+            with ui.row().classes("w-full items-center gap-2"):
+                key_select = ui.select(
+                    [None, *checkbox_names],
+                    value=current_key,
+                ).props("dense outlined").classes("grow")
+                ui.label("=").classes("text-grey")
+                val_select = ui.select(
+                    [True, False],
+                    value=current_val if isinstance(current_val, bool) else None,
+                ).props("dense outlined").classes("w-24")
+
+            def _apply(_e=None, w=wf_key, sk=step_key, i=idx,
+                       ks=key_select, vs=val_select):
+                k, v = ks.value, vs.value
+                rule = {k: v} if k and v is not None else None
+                self.set_field_attr(w, sk, i, "visible_when", rule)
+                self._refresh_detail()
+
+            key_select.on_value_change(_apply)
+            val_select.on_value_change(_apply)
+
     def _safe_field_rename(self, wf_key: str, step_key: str, idx: int, new_name: str) -> None:
         try:
             self.set_field_attr(wf_key, step_key, idx, "name", new_name)
