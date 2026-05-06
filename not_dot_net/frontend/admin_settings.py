@@ -309,6 +309,7 @@ async def _render_mail_outbox(user):
             rows = (await session.execute(stmt)).scalars().all()
         return [
             {
+                "id": str(r.id),
                 "to": r.to_address,
                 "subject": r.subject[:100],
                 "attempts": r.attempts,
@@ -343,11 +344,11 @@ async def _render_mail_outbox(user):
                 ui.label(t("mail_outbox_empty")).classes("text-grey")
                 return
             cols = pending_columns if state == "pending" else failed_columns
-            ui.table(columns=cols, rows=rows, row_key="to").props("flat bordered dense").classes("w-full")
+            ui.table(columns=cols, rows=rows, row_key="id").props("flat bordered dense").classes("w-full")
 
     with ui.tabs() as tabs:
-        pending_tab = ui.tab(t("mail_outbox_pending"))
-        failed_tab = ui.tab(t("mail_outbox_failed"))
-    tabs.on_value_change(lambda e: render_tab("pending" if e.value == t("mail_outbox_pending") else "failed"))
-    tabs.value = t("mail_outbox_pending")
+        ui.tab("pending", label=t("mail_outbox_pending"))
+        ui.tab("failed", label=t("mail_outbox_failed"))
+    tabs.on_value_change(lambda e: render_tab(e.value))
+    tabs.value = "pending"
     await render_tab("pending")
