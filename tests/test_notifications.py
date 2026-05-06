@@ -8,7 +8,6 @@ from not_dot_net.config import (
     NotificationRuleConfig,
     FieldConfig,
 )
-from not_dot_net.backend.mail import MailConfig
 
 
 # --- Fixtures ---
@@ -205,7 +204,7 @@ async def test_notify_sends_to_resolved_recipients():
 
     sent_emails = []
 
-    async def fake_send_mail(to, subject, body_html, mail_settings):
+    async def fake_send_mail(to, subject, body_html):
         sent_emails.append((to, subject))
 
     with patch("not_dot_net.backend.mail.send_mail", side_effect=fake_send_mail):
@@ -214,7 +213,6 @@ async def test_notify_sends_to_resolved_recipients():
             event="submit",
             step_key="request",
             workflow=VPN_WORKFLOW,
-            mail_settings=MailConfig(dev_mode=True),
             get_user_email=AsyncMock(return_value="requester@test.com"),
             get_users_by_role=AsyncMock(return_value=[FakeUser("dir@test.com")]),
         )
@@ -232,7 +230,6 @@ async def test_notify_returns_empty_without_matching_rules():
             event="save_draft",
             step_key="request",
             workflow=VPN_WORKFLOW,
-            mail_settings=MailConfig(dev_mode=True),
             get_user_email=AsyncMock(return_value="requester@test.com"),
             get_users_by_role=AsyncMock(return_value=[FakeUser("dir@test.com")]),
         )
@@ -248,7 +245,6 @@ async def test_notify_returns_empty_without_recipients():
             event="submit",
             step_key="request",
             workflow=VPN_WORKFLOW,
-            mail_settings=MailConfig(dev_mode=True),
             get_user_email=AsyncMock(return_value=None),
             get_users_by_role=AsyncMock(return_value=[]),
         )
@@ -271,7 +267,7 @@ async def test_notify_uses_permission_recipients():
     )
     sent_emails = []
 
-    async def fake_send_mail(to, subject, body_html, mail_settings):
+    async def fake_send_mail(to, subject, body_html):
         sent_emails.append((to, subject, body_html))
 
     with patch("not_dot_net.backend.mail.send_mail", side_effect=fake_send_mail):
@@ -280,7 +276,6 @@ async def test_notify_uses_permission_recipients():
             event="submit",
             step_key="review",
             workflow=workflow,
-            mail_settings=MailConfig(dev_mode=True),
             get_user_email=AsyncMock(return_value=None),
             get_users_by_role=AsyncMock(return_value=[]),
             get_users_by_permission=AsyncMock(return_value=[
@@ -299,7 +294,7 @@ async def test_notify_submit_with_token_uses_org_base_url():
     req = FakeRequest(token="token-123")
     sent_emails = []
 
-    async def fake_send_mail(to, subject, body_html, mail_settings):
+    async def fake_send_mail(to, subject, body_html):
         sent_emails.append((to, subject, body_html))
 
     with patch("not_dot_net.backend.mail.send_mail", side_effect=fake_send_mail):
@@ -308,7 +303,6 @@ async def test_notify_submit_with_token_uses_org_base_url():
             event="submit",
             step_key="request",
             workflow=VPN_WORKFLOW,
-            mail_settings=MailConfig(dev_mode=True),
             get_user_email=AsyncMock(return_value=None),
             get_users_by_role=AsyncMock(return_value=[FakeUser("dir@test.com")]),
         )
@@ -322,7 +316,7 @@ async def test_notify_non_token_event_does_not_include_token_link():
     req = FakeRequest(token="token-should-not-be-sent")
     sent_emails = []
 
-    async def fake_send_mail(to, subject, body_html, mail_settings):
+    async def fake_send_mail(to, subject, body_html):
         sent_emails.append((to, subject, body_html))
 
     with patch("not_dot_net.backend.mail.send_mail", side_effect=fake_send_mail):
@@ -331,7 +325,6 @@ async def test_notify_non_token_event_does_not_include_token_link():
             event="approve",
             step_key="approval",
             workflow=VPN_WORKFLOW,
-            mail_settings=MailConfig(dev_mode=True),
             get_user_email=AsyncMock(return_value="requester@test.com"),
             get_users_by_role=AsyncMock(return_value=[]),
         )
@@ -366,7 +359,7 @@ async def test_request_corrections_includes_token_link():
 
     sent_emails = []
 
-    async def fake_send_mail(to, subject, body_html, mail_settings):
+    async def fake_send_mail(to, subject, body_html):
         sent_emails.append((to, subject, body_html))
 
     with patch("not_dot_net.backend.mail.send_mail", side_effect=fake_send_mail):
@@ -375,7 +368,6 @@ async def test_request_corrections_includes_token_link():
             event="request_corrections",
             step_key="review",
             workflow=ONBOARDING_WORKFLOW,
-            mail_settings=MailConfig(dev_mode=True),
             get_user_email=AsyncMock(return_value=None),
             get_users_by_role=AsyncMock(return_value=[]),
         )

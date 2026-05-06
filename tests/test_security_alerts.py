@@ -1,13 +1,9 @@
-import asyncio
 import uuid
 from unittest.mock import AsyncMock, patch
 
 from not_dot_net.backend.db import User, session_scope
-from not_dot_net.backend.mail import MailConfig
 from not_dot_net.backend.security_alerts import (
-    _BACKGROUND_ALERT_TASKS,
     get_security_alert_recipients,
-    queue_security_alert,
     render_security_alert_body,
     send_security_alert,
 )
@@ -44,7 +40,6 @@ async def test_security_alert_recipients_include_only_active_superusers():
 
 async def test_send_security_alert_uses_existing_mail_sender_for_each_recipient():
     await _create_user("root@test.com", is_superuser=True)
-    mail_settings = MailConfig(dev_mode=True)
 
     with patch(
         "not_dot_net.backend.security_alerts.send_mail",
@@ -53,7 +48,6 @@ async def test_send_security_alert_uses_existing_mail_sender_for_each_recipient(
         recipients = await send_security_alert(
             "[not-dot-net] Security alert",
             "<p>body</p>",
-            mail_settings=mail_settings,
         )
 
     assert recipients == ["root@test.com"]
@@ -62,7 +56,6 @@ async def test_send_security_alert_uses_existing_mail_sender_for_each_recipient(
         "root@test.com",
         "[not-dot-net] Security alert",
         "<p>body</p>",
-        mail_settings,
     )
 
 
@@ -99,41 +92,6 @@ def test_render_security_alert_body_escapes_values():
     assert "10.0.0.42" in body
     assert "Review the audit log" in body
 
-
-async def test_queue_security_alert_keeps_task_until_completion():
-    started = asyncio.Event()
-    release = asyncio.Event()
-
-    async def pending_alert():
-        started.set()
-        await release.wait()
-
-    queue_security_alert(pending_alert())
-    await started.wait()
-
-    assert len(_BACKGROUND_ALERT_TASKS) == 1
-    release.set()
-    for _ in range(5):
-        await asyncio.sleep(0)
-        if not _BACKGROUND_ALERT_TASKS:
-            break
-    assert _BACKGROUND_ALERT_TASKS == set()
-
-
-def test_queue_security_alert_logs_schedule_failure():
-    async def alert():
-        return None
-
-    with (
-        patch(
-            "not_dot_net.backend.security_alerts.asyncio.create_task",
-            side_effect=RuntimeError("no running event loop"),
-        ),
-        patch("not_dot_net.backend.security_alerts.logger.exception") as log_mock,
-    ):
-        queue_security_alert(alert())
-
-    log_mock.assert_called_once_with("Failed to schedule security alert background task")
 
 async def test_cli_promote_emits_superuser_grant_alert():
     from not_dot_net.cli import _set_superuser

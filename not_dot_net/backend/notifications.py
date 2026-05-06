@@ -109,7 +109,6 @@ async def notify(
     event: str,
     step_key: str,
     workflow: WorkflowConfig,
-    mail_settings,
     get_user_email,
     get_users_by_role,
     get_users_by_permission=None,
@@ -141,7 +140,7 @@ async def notify(
         subject, body = render_email(template_key, workflow.label, **kwargs)
 
         for email in recipients:
-            await send_mail(email, subject, body, mail_settings)
+            await send_mail(email, subject, body)
             all_sent.append(email)
 
     return all_sent

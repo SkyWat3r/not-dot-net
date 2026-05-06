@@ -16,7 +16,7 @@ from not_dot_net.backend.workflow_service import (
     workflows_config,
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config
-from not_dot_net.backend.mail import mail_config, send_mail
+from not_dot_net.backend.mail import send_mail
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_step import render_step_form
 
@@ -53,7 +53,6 @@ def setup():
                 if code is None:
                     ui.notify(t("code_already_sent"), color="info")
                     return
-                mail_cfg = await mail_config.get()
                 wf_cfg = await workflows_config.get()
                 expiry = wf_cfg.verification_code_expiry_minutes
                 await send_mail(
@@ -61,7 +60,6 @@ def setup():
                     f"Your verification code for {wf.label}",
                     f"<p>Your verification code is: <strong>{code}</strong></p>"
                     f"<p>This code expires in {expiry} minutes.</p>",
-                    mail_cfg,
                 )
                 container.clear()
                 with container:

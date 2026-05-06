@@ -1,12 +1,18 @@
-"""Async mail sending with dev-mode logging."""
+"""Mail config + the public enqueue API.
+
+`send_mail` is the only public entrypoint. It writes a row to the
+`mail_outbox` table; the background worker in `mail_outbox.py` drains
+that table and performs the actual SMTP send using the current
+`MailConfig`.
+"""
 
 import logging
-from email.message import EmailMessage
+from datetime import datetime, timezone
 
-import aiosmtplib
 from pydantic import BaseModel
 
 from not_dot_net.backend.app_config import section
+from not_dot_net.backend.db import session_scope
 
 logger = logging.getLogger("not_dot_net.mail")
 
@@ -25,31 +31,21 @@ class MailConfig(BaseModel):
 mail_config = section("mail", MailConfig, label="Email / SMTP")
 
 
-async def send_mail(
-    to: str,
-    subject: str,
-    body_html: str,
-    mail_settings: MailConfig,
-) -> None:
-    effective_to = to
-    if mail_settings.dev_catch_all:
-        effective_to = mail_settings.dev_catch_all
+async def send_mail(to: str, subject: str, body_html: str) -> None:
+    """Enqueue an outbound mail. Returns when the row is committed.
 
-    if mail_settings.dev_mode:
-        logger.info("[MAIL dev] To: %s (original: %s) Subject: %s", effective_to, to, subject)
-        return
+    The worker (run_outbox_worker) drains the table and performs the
+    actual SMTP send using the current MailConfig.
+    """
+    from not_dot_net.backend.mail_outbox import MailOutbox
 
-    msg = EmailMessage()
-    msg["From"] = mail_settings.from_address
-    msg["To"] = effective_to
-    msg["Subject"] = subject
-    msg.set_content(body_html, subtype="html")
-
-    await aiosmtplib.send(
-        msg,
-        hostname=mail_settings.smtp_host,
-        port=mail_settings.smtp_port,
-        start_tls=mail_settings.smtp_tls,
-        username=mail_settings.smtp_user or None,
-        password=mail_settings.smtp_password or None,
-    )
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with session_scope() as session:
+        row = MailOutbox(
+            to_address=to,
+            subject=subject,
+            body_html=body_html,
+            next_attempt_at=now,
+        )
+        session.add(row)
+        await session.commit()

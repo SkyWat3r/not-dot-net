@@ -77,12 +77,10 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 "success": True,
             },
         )
-        security_alerts.queue_security_alert(
-            security_alerts.notify_superuser_login_success(
-                user,
-                ip=ip,
-                user_agent=user_agent,
-            )
+        await security_alerts.notify_superuser_login_success(
+            user,
+            ip=ip,
+            user_agent=user_agent,
         )
 
     async def update(

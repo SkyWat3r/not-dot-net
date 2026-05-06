@@ -95,12 +95,10 @@ async def _audit_failed_superuser_login(username: str, request: Request) -> None
             "success": False,
         },
     )
-    security_alerts.queue_security_alert(
-        security_alerts.notify_superuser_login_failed(
-            user,
-            ip=ip,
-            user_agent=user_agent,
-        )
+    await security_alerts.notify_superuser_login_failed(
+        user,
+        ip=ip,
+        user_agent=user_agent,
     )
 
 

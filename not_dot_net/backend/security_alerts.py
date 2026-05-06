@@ -1,20 +1,17 @@
 """Security alert emails for critical audit/security events."""
 
-import asyncio
 import logging
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from html import escape
-from typing import Any
 
 from sqlalchemy import select
 
 from not_dot_net.backend.db import User, session_scope
-from not_dot_net.backend.mail import MailConfig, mail_config, send_mail
+from not_dot_net.backend.mail import send_mail
 from not_dot_net.config import org_config
 
 logger = logging.getLogger("not_dot_net.security_alerts")
-_BACKGROUND_ALERT_TASKS: set[asyncio.Task[Any]] = set()
 
 
 async def _subject(suffix: str) -> str:
@@ -74,41 +71,12 @@ def render_security_alert_body(
     )
 
 
-async def send_security_alert(
-    subject: str,
-    body_html: str,
-    *,
-    mail_settings: MailConfig | None = None,
-) -> list[str]:
+async def send_security_alert(subject: str, body_html: str) -> list[str]:
     """Send one security alert to every configured security recipient."""
-    cfg = mail_settings or await mail_config.get()
     recipients = await get_security_alert_recipients()
     for email in recipients:
-        await send_mail(email, subject, body_html, cfg)
+        await send_mail(email, subject, body_html)
     return recipients
-
-
-def queue_security_alert(coro) -> None:
-    """Schedule a best-effort alert without blocking the active request."""
-    try:
-        task = asyncio.create_task(coro)
-    except Exception:
-        close = getattr(coro, "close", None)
-        if close is not None:
-            close()
-        logger.exception("Failed to schedule security alert background task")
-        return
-
-    _BACKGROUND_ALERT_TASKS.add(task)
-
-    def _log_failure(done_task: asyncio.Task) -> None:
-        _BACKGROUND_ALERT_TASKS.discard(done_task)
-        try:
-            done_task.result()
-        except Exception:
-            logger.exception("Unhandled security alert background task failure")
-
-    task.add_done_callback(_log_failure)
 
 
 async def notify_superuser_login_success(

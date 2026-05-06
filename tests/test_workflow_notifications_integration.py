@@ -84,7 +84,7 @@ async def test_onboarding_submit_sends_target_token_link_email():
 
     sent_emails = []
 
-    async def fake_send_mail(to, subject, body_html, mail_settings):
+    async def fake_send_mail(to, subject, body_html):
         sent_emails.append((to, subject, body_html))
 
     with patch("not_dot_net.backend.mail.send_mail", side_effect=fake_send_mail):
@@ -128,7 +128,7 @@ async def test_onboarding_request_corrections_sends_fresh_token_link_email():
 
     sent_emails = []
 
-    async def fake_send_mail(to, subject, body_html, mail_settings):
+    async def fake_send_mail(to, subject, body_html):
         sent_emails.append((to, subject, body_html))
 
     with patch("not_dot_net.backend.mail.send_mail", side_effect=fake_send_mail):
@@ -179,7 +179,7 @@ async def test_onboarding_complete_notification_does_not_include_token_link():
 
     sent_emails = []
 
-    async def fake_send_mail(to, subject, body_html, mail_settings):
+    async def fake_send_mail(to, subject, body_html):
         sent_emails.append((to, subject, body_html))
 
     with patch("not_dot_net.backend.mail.send_mail", side_effect=fake_send_mail):
