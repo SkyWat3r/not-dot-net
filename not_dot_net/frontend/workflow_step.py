@@ -125,6 +125,10 @@ async def _render_field(field_cfg, data, fields, files, on_file_upload, max_uplo
             label=label, value=value,
             validation={t("invalid_phone"): lambda v: is_valid_phone(v) if v else True},
         ).props("outlined dense type=tel").classes(width_class)
+    elif field_cfg.type == "checkbox":
+        fields[field_cfg.name] = ui.checkbox(
+            text=label, value=bool(value)
+        ).classes(width_class)
     else:
         fields[field_cfg.name] = ui.input(
             label=label, value=value
