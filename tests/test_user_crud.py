@@ -127,7 +127,10 @@ async def test_update_user_active_flag():
         assert refreshed.is_active is False
 
 
-async def test_update_user_role():
+async def test_update_user_role_does_not_grant_superuser():
+    """Role assignment is data-driven and never confers is_superuser.
+    Server-admin status is set only via CLI / bootstrap, so the
+    superuser-granted security alert must not fire on role changes."""
     user = await _create_user()
     with patch(
         "not_dot_net.backend.security_alerts.notify_superuser_granted",
@@ -135,30 +138,31 @@ async def test_update_user_role():
     ) as notify_mock:
         await _update_user(user.id, {"role": "admin"})
 
-    notify_mock.assert_awaited_once()
-    args, kwargs = notify_mock.await_args
-    assert args[0].email == user.email
-    assert kwargs == {}
+    notify_mock.assert_not_awaited()
     async with session_scope() as session:
         refreshed = await session.get(User, user.id)
         assert refreshed.role == "admin"
-        assert refreshed.is_superuser is True
+        assert refreshed.is_superuser is False
 
 
-async def test_update_user_role_demotion_clears_superuser():
+async def test_update_user_role_leaves_existing_superuser_alone():
     user = await _create_user()
+    async with session_scope() as session:
+        refreshed = await session.get(User, user.id)
+        refreshed.is_superuser = True
+        await session.commit()
+
     with patch(
         "not_dot_net.backend.security_alerts.notify_superuser_granted",
         new=AsyncMock(return_value=["root@test.com"]),
     ) as notify_mock:
-        await _update_user(user.id, {"role": "admin"})
         await _update_user(user.id, {"role": "member"})
 
-    notify_mock.assert_awaited_once()
+    notify_mock.assert_not_awaited()
     async with session_scope() as session:
         refreshed = await session.get(User, user.id)
         assert refreshed.role == "member"
-        assert refreshed.is_superuser is False
+        assert refreshed.is_superuser is True
 
 
 async def test_update_user_role_admin_does_not_alert_when_already_superuser():

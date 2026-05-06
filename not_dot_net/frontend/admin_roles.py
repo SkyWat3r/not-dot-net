@@ -115,19 +115,18 @@ async def _render_role_editor(outer_container, user, role_key, role_def, all_per
 
         ui.button(t("save"), on_click=save).props("color=primary")
 
-        if role_key != "admin":
-            async def delete():
-                current_count = (await _user_count_by_role()).get(role_key, 0)
-                if current_count > 0:
-                    ui.notify(
-                        f"Cannot delete role '{role_key}' — {current_count} users assigned",
-                        color="negative",
-                    )
-                    return
-                cfg = await roles_config.get()
-                del cfg.roles[role_key]
-                await roles_config.set(cfg)
-                ui.notify(f"Role '{role_key}' deleted", color="positive")
-                await _render_roles(outer_container, user)
+        async def delete():
+            current_count = (await _user_count_by_role()).get(role_key, 0)
+            if current_count > 0:
+                ui.notify(
+                    f"Cannot delete role '{role_key}' — {current_count} users assigned",
+                    color="negative",
+                )
+                return
+            cfg = await roles_config.get()
+            del cfg.roles[role_key]
+            await roles_config.set(cfg)
+            ui.notify(f"Role '{role_key}' deleted", color="positive")
+            await _render_roles(outer_container, user)
 
-            ui.button(t("delete"), icon="delete", on_click=delete).props("flat color=negative")
+        ui.button(t("delete"), icon="delete", on_click=delete).props("flat color=negative")

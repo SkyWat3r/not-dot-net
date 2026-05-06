@@ -66,6 +66,28 @@ async def test_send_security_alert_uses_existing_mail_sender_for_each_recipient(
     )
 
 
+async def test_subject_prefix_uses_org_app_name():
+    from not_dot_net.backend.security_alerts import _subject
+    from not_dot_net.config import org_config
+
+    cfg = await org_config.get()
+    cfg.app_name = "LPP Intranet"
+    await org_config.set(cfg)
+
+    assert await _subject("Security alert: x") == "[LPP Intranet] Security alert: x"
+
+
+async def test_subject_prefix_falls_back_when_app_name_blank():
+    from not_dot_net.backend.security_alerts import _subject
+    from not_dot_net.config import org_config
+
+    cfg = await org_config.get()
+    cfg.app_name = "   "
+    await org_config.set(cfg)
+
+    assert await _subject("hello") == "[not-dot-net] hello"
+
+
 def test_render_security_alert_body_escapes_values():
     body = render_security_alert_body(
         "A superuser account has logged in.",
@@ -114,7 +136,7 @@ def test_queue_security_alert_logs_schedule_failure():
     log_mock.assert_called_once_with("Failed to schedule security alert background task")
 
 async def test_cli_promote_emits_superuser_grant_alert():
-    from not_dot_net.cli import _set_role
+    from not_dot_net.cli import _set_superuser
 
     user = await _create_user("cli-promote@test.com")
 
@@ -125,7 +147,7 @@ async def test_cli_promote_emits_superuser_grant_alert():
             new=AsyncMock(return_value=["root@test.com"]),
         ) as notify_mock,
     ):
-        await _set_role(user.email, "admin")
+        await _set_superuser(user.email, True)
 
     notify_mock.assert_awaited_once()
     args, kwargs = notify_mock.await_args
@@ -134,13 +156,9 @@ async def test_cli_promote_emits_superuser_grant_alert():
 
 
 async def test_cli_revoke_does_not_emit_superuser_grant_alert():
-    from not_dot_net.cli import _set_role
+    from not_dot_net.cli import _set_superuser
 
     user = await _create_user("cli-revoke@test.com", is_superuser=True)
-    async with session_scope() as session:
-        db_user = await session.get(User, user.id)
-        db_user.role = "admin"
-        await session.commit()
 
     with (
         patch("not_dot_net.backend.db.init_db"),
@@ -149,6 +167,6 @@ async def test_cli_revoke_does_not_emit_superuser_grant_alert():
             new=AsyncMock(return_value=["root@test.com"]),
         ) as notify_mock,
     ):
-        await _set_role(user.email, "member")
+        await _set_superuser(user.email, False)
 
     notify_mock.assert_not_awaited()

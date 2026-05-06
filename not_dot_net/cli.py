@@ -52,14 +52,14 @@ def stamp(
 
 @app.command
 def promote(user: str):
-    """Grant admin role to a user (match by email, name, or substring)."""
-    asyncio.run(_set_role(user, "admin"))
+    """Grant super-user (server admin) status to a user."""
+    asyncio.run(_set_superuser(user, True))
 
 
 @app.command
 def revoke(user: str):
-    """Remove admin role from a user (match by email, name, or substring)."""
-    asyncio.run(_set_role(user, "member"))
+    """Revoke super-user status from a user."""
+    asyncio.run(_set_superuser(user, False))
 
 
 async def _find_user(session, query: str):
@@ -89,7 +89,7 @@ async def _find_user(session, query: str):
     return None
 
 
-async def _set_role(query: str, role: str):
+async def _set_superuser(query: str, value: bool):
     from not_dot_net.backend.db import init_db, session_scope
 
     database_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
@@ -100,20 +100,13 @@ async def _set_role(query: str, role: str):
         if not user:
             print(f"Error: no user matching '{query}'.")
             raise SystemExit(1)
-        old_role = user.role
-        was_superuser = bool(user.is_superuser)
-        user.role = role
-        user.is_superuser = (role == "admin")
+        was = user.is_superuser
+        user.is_superuser = value
         await session.commit()
-        await _notify_cli_superuser_grant_if_needed(user, was_superuser)
-        print(f"'{user.email}' ({user.full_name or '-'}): {old_role or '(none)'} → {role}")
-
-
-async def _notify_cli_superuser_grant_if_needed(user, was_superuser: bool) -> None:
-    if was_superuser or not user.is_superuser:
-        return
-    from not_dot_net.backend.security_alerts import notify_superuser_granted
-    await notify_superuser_granted(user, actor_email="cli")
+        if value and not was:
+            from not_dot_net.backend.security_alerts import notify_superuser_granted
+            await notify_superuser_granted(user, actor_email="cli")
+        print(f"'{user.email}' ({user.full_name or '-'}): is_superuser {was} → {value}")
 
 
 @app.command
@@ -219,8 +212,8 @@ async def _drop_single_user(query: str):
         if not user:
             print(f"Error: no user matching '{query}'.")
             raise SystemExit(1)
-        if user.role == "admin":
-            print(f"Refusing to delete admin '{user.email}'.")
+        if user.is_superuser:
+            print(f"Refusing to delete super-user '{user.email}'.")
             raise SystemExit(1)
         email, name = user.email, user.full_name or "-"
         await session.delete(user)
@@ -230,7 +223,7 @@ async def _drop_single_user(query: str):
 
 @app.command
 def drop_users():
-    """Delete all non-admin users from the database."""
+    """Delete every non-super-user from the database."""
     asyncio.run(_drop_users())
 
 
@@ -242,14 +235,14 @@ async def _drop_users():
     init_db(database_url)
 
     async with session_scope() as session:
-        result = await session.execute(select(User).where(User.role != "admin"))
+        result = await session.execute(select(User).where(User.is_superuser.is_(False)))
         victims = result.scalars().all()
         if not victims:
-            print("No non-admin users to delete.")
+            print("No non-super-users to delete.")
             return
         for u in victims:
             print(f"  deleting {u.email} ({u.full_name or '-'}, role={u.role or '(none)'})")
-        await session.execute(delete(User).where(User.role != "admin"))
+        await session.execute(delete(User).where(User.is_superuser.is_(False)))
         await session.commit()
         print(f"Deleted {len(victims)} user(s).")
 
@@ -258,10 +251,15 @@ async def _drop_users():
 def create_user(
     username: str,
     password: str,
-    role: str = "member",
+    role: str = "",
+    superuser: bool = False,
     secrets_file: str = "./secrets.key",
 ):
-    """Create a new user."""
+    """Create a new user.
+
+    --role assigns a role key (must exist in RolesConfig); empty by default.
+    --superuser grants server-admin status (bypasses all permission checks).
+    """
     async def _create():
         from pathlib import Path
         from not_dot_net.backend.db import init_db, create_db_and_tables, session_scope, get_user_db
@@ -284,16 +282,18 @@ def create_user(
                             email=username,
                             password=password,
                             is_active=True,
-                            is_superuser=(role == "admin"),
+                            is_superuser=superuser,
                         )
                     )
-                    user.role = role
-                    session.add(user)
-                    await session.commit()
+                    if role:
+                        user.role = role
+                        session.add(user)
+                        await session.commit()
                     if user.is_superuser:
                         from not_dot_net.backend.security_alerts import notify_superuser_granted
                         await notify_superuser_granted(user, actor_email="cli")
-                    print(f"User '{user.email}' created with role '{role}'.")
+                    label = "super-user" if superuser else (f"role '{role}'" if role else "no role")
+                    print(f"User '{user.email}' created ({label}).")
 
     asyncio.run(_create())
 

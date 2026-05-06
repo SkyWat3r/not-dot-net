@@ -80,9 +80,6 @@ def create_app(
         if dev_mode:
             await create_db_and_tables()
             logger.info("Dev tables created")
-        from not_dot_net.backend.roles import seed_admin_permissions
-        await seed_admin_permissions()
-        logger.info("Admin permissions seeded")
         if dev_mode:
             await ensure_default_admin(DEV_ADMIN_EMAIL, DEV_ADMIN_PASSWORD)
         if _seed_fake_users:

@@ -78,7 +78,7 @@ async def _seed_fake_workflows(users: list) -> None:
 
     rng = _random.Random(42)
 
-    staff = [u for u in users if u.role in ("staff", "director", "admin")]
+    staff = [u for u in users if u.role in ("staff", "director")]
     directors = [u for u in users if u.role == "director"]
 
     if not staff:

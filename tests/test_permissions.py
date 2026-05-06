@@ -210,24 +210,31 @@ def test_only_expected_auth_http_routes_are_exposed():
     assert not any(path.startswith("/auth/jwt") or path.startswith("/auth/cookie") for path, _ in auth_routes)
 
 
-async def test_update_path_role_admin_sets_is_superuser_true():
-    user = await _create_user("role-admin@test.com", "Password1!")
+async def test_role_update_does_not_grant_is_superuser():
+    """Setting any role (including legacy 'admin' string) must never flip is_superuser.
+    is_superuser is a server-admin flag set only via CLI / bootstrap."""
+    user = await _create_user("role-no-escalation@test.com", "Password1!")
 
     await _update_user(user.id, {"role": "admin"})
 
     async with session_scope() as session:
         refreshed = await session.get(User, user.id)
         assert refreshed.role == "admin"
-        assert refreshed.is_superuser is True
+        assert refreshed.is_superuser is False
 
 
-async def test_update_path_role_member_clears_is_superuser():
-    user = await _create_user("role-member@test.com", "Password1!")
+async def test_role_update_preserves_is_superuser():
+    """Role changes leave is_superuser untouched in either direction."""
+    user = await _create_user("role-preserve@test.com", "Password1!")
 
-    await _update_user(user.id, {"role": "admin"})
+    async with session_scope() as session:
+        refreshed = await session.get(User, user.id)
+        refreshed.is_superuser = True
+        await session.commit()
+
     await _update_user(user.id, {"role": "member"})
 
     async with session_scope() as session:
         refreshed = await session.get(User, user.id)
         assert refreshed.role == "member"
-        assert refreshed.is_superuser is False
+        assert refreshed.is_superuser is True

@@ -11,9 +11,17 @@ from sqlalchemy import select
 
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.mail import MailConfig, mail_config, send_mail
+from not_dot_net.config import org_config
 
 logger = logging.getLogger("not_dot_net.security_alerts")
 _BACKGROUND_ALERT_TASKS: set[asyncio.Task[Any]] = set()
+
+
+async def _subject(suffix: str) -> str:
+    """Build an alert subject prefixed with the configured app name."""
+    cfg = await org_config.get()
+    app_name = (cfg.app_name or "not-dot-net").strip() or "not-dot-net"
+    return f"[{app_name}] {suffix}"
 
 
 def _clean_email(email: str | None) -> str | None:
@@ -110,7 +118,7 @@ async def notify_superuser_login_success(
     user_agent: str | None,
 ) -> list[str]:
     """Notify security recipients that a superuser successfully logged in."""
-    subject = "[not-dot-net] Security alert: superuser login"
+    subject = await _subject("Security alert: superuser login")
     body = render_security_alert_body(
         "A superuser account has logged in.",
         [
@@ -137,7 +145,7 @@ async def notify_superuser_login_failed(
     user_agent: str | None,
 ) -> list[str]:
     """Notify security recipients that a superuser login failed."""
-    subject = "[not-dot-net] Security alert: superuser login failed"
+    subject = await _subject("Security alert: superuser login failed")
     body = render_security_alert_body(
         "A failed login attempt targeted a superuser account.",
         [
@@ -164,7 +172,7 @@ async def notify_superuser_granted(
     actor_email: str | None = None,
 ) -> list[str]:
     """Notify security recipients that a user was granted superuser privileges."""
-    subject = "[not-dot-net] Security alert: is_superuser tag granted"
+    subject = await _subject("Security alert: is_superuser tag granted")
     body = render_security_alert_body(
         "A user has been assigned the tag is_superuser.",
         [

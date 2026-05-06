@@ -107,13 +107,6 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 )
         return updated_user
 
-    async def on_after_update(self, user: User, update_dict: dict, request: Request | None = None):
-        if "role" in update_dict:
-            is_now_superuser = user.role == "admin"
-            user.is_superuser = is_now_superuser
-            await self.user_db.update(user, {"is_superuser": is_now_superuser})
-
-
 async def get_user_manager(
     user_db: SQLAlchemyUserDatabase = Depends(get_user_db),
 ):
@@ -153,7 +146,12 @@ current_active_user_optional = fastapi_users.current_user(active=True, optional=
 
 
 async def ensure_default_admin(email: str, password: str) -> None:
-    """Create default admin user if it doesn't exist yet."""
+    """Create the bootstrap super-user if none exists yet.
+
+    The super-user is the server admin (is_superuser=True) — it bypasses
+    every permission check via permissions.has_permissions(). No role is
+    assigned: roles are pure config data and the super-user doesn't need one.
+    """
     from not_dot_net.backend.db import session_scope, get_user_db
     from not_dot_net.backend.schemas import UserCreate
     from fastapi_users.exceptions import UserAlreadyExists
@@ -162,7 +160,7 @@ async def ensure_default_admin(email: str, password: str) -> None:
         async with asynccontextmanager(get_user_db)(session) as user_db:
             async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
                 try:
-                    user = await user_manager.create(
+                    await user_manager.create(
                         UserCreate(
                             email=email,
                             password=password,
@@ -170,9 +168,6 @@ async def ensure_default_admin(email: str, password: str) -> None:
                             is_superuser=True,
                         )
                     )
-                    user.role = "admin"
-                    session.add(user)
-                    await session.commit()
-                    logger.info("Default admin '%s' created", email)
+                    logger.info("Default super-user '%s' created", email)
                 except UserAlreadyExists:
                     pass

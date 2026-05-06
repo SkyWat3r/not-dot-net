@@ -1,4 +1,4 @@
-"""First-run setup wizard — shown when no admin user exists (production only)."""
+"""First-run setup wizard — shown when no super-user exists (production only)."""
 
 from nicegui import ui
 from sqlalchemy import select
@@ -8,10 +8,10 @@ from not_dot_net.backend.users import ensure_default_admin
 from not_dot_net.config import org_config, OrgConfig
 
 
-async def has_admin() -> bool:
+async def has_superuser() -> bool:
     async with session_scope() as session:
         result = await session.execute(
-            select(User).where(User.role == "admin").limit(1)
+            select(User).where(User.is_superuser.is_(True)).limit(1)
         )
         return result.scalar_one_or_none() is not None
 
@@ -19,7 +19,7 @@ async def has_admin() -> bool:
 def setup():
     @ui.page("/setup")
     async def setup_page():
-        if await has_admin():
+        if await has_superuser():
             ui.navigate.to("/login")
             return
 

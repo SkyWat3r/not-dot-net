@@ -10,7 +10,7 @@ from not_dot_net.backend.permissions import (
     has_permissions,
     check_permission,
 )
-from not_dot_net.backend.roles import RoleDefinition, roles_config, seed_admin_permissions
+from not_dot_net.backend.roles import RoleDefinition, roles_config
 from not_dot_net.backend.booking_service import (
     create_resource,
     delete_resource,
@@ -28,9 +28,12 @@ import not_dot_net.frontend.audit_log  # noqa: F401
 import not_dot_net.frontend.directory  # noqa: F401
 
 
-async def _create_user(email, role):
+async def _create_user(email, role, is_superuser=False):
     async with session_scope() as session:
-        user = User(id=uuid.uuid4(), email=email, hashed_password="x", role=role)
+        user = User(
+            id=uuid.uuid4(), email=email, hashed_password="x",
+            role=role, is_superuser=is_superuser,
+        )
         session.add(user)
         await session.commit()
         await session.refresh(user)
@@ -38,7 +41,6 @@ async def _create_user(email, role):
 
 
 async def _setup():
-    await seed_admin_permissions()
     cfg = await roles_config.get()
     cfg.roles["readonly"] = RoleDefinition(label="Read Only", permissions=[])
     cfg.roles["booker"] = RoleDefinition(
@@ -53,12 +55,14 @@ async def _setup():
     await roles_config.set(cfg)
 
 
-async def test_admin_can_do_everything():
+async def test_superuser_can_do_everything():
+    """The is_superuser bypass in has_permissions grants every permission,
+    no role required."""
     await _setup()
-    admin = await _create_user("admin@test.com", "admin")
+    su = await _create_user("super@test.com", role="", is_superuser=True)
     all_perms = list(get_permissions().keys())
     for perm in all_perms:
-        assert await has_permissions(admin, perm), f"admin should have {perm}"
+        assert await has_permissions(su, perm), f"superuser should have {perm}"
 
 
 async def test_readonly_cannot_do_anything():
