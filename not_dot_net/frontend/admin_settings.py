@@ -73,6 +73,8 @@ async def render(user):
 
             if prefix == "ldap":
                 _render_ldap_sync(user)
+            if prefix == "mail":
+                await _render_mail_outbox(user)
 
 
 async def _render_form(prefix, cfg_section, current, user):
@@ -282,3 +284,70 @@ def _render_ldap_sync(user):
         dialog.open()
 
     ui.button(t("sync_ad_users"), icon="sync", on_click=open_sync_dialog).props("color=primary")
+
+
+async def _render_mail_outbox(user):
+    """Read-only outbox table: pending + failed mails."""
+    from sqlalchemy import select
+    from not_dot_net.backend.db import session_scope
+    from not_dot_net.backend.mail_outbox import MailOutbox
+
+    ui.label(t("mail_outbox")).classes("text-subtitle1 mt-4")
+
+    async def _load_rows(state: str) -> list[dict]:
+        async with session_scope() as session:
+            stmt = select(MailOutbox).limit(100)
+            if state == "pending":
+                stmt = stmt.where(
+                    MailOutbox.sent_at.is_(None),
+                    MailOutbox.failed_at.is_(None),
+                ).order_by(MailOutbox.created_at)
+            else:
+                stmt = stmt.where(MailOutbox.failed_at.is_not(None)).order_by(
+                    MailOutbox.failed_at.desc()
+                )
+            rows = (await session.execute(stmt)).scalars().all()
+        return [
+            {
+                "to": r.to_address,
+                "subject": r.subject[:100],
+                "attempts": r.attempts,
+                "next_attempt_at": r.next_attempt_at.strftime("%Y-%m-%d %H:%M"),
+                "failed_at": r.failed_at.strftime("%Y-%m-%d %H:%M") if r.failed_at else "",
+                "last_error": (r.last_error or "")[:200],
+            }
+            for r in rows
+        ]
+
+    table_container = ui.column().classes("w-full")
+    pending_columns = [
+        {"name": "to", "label": t("mail_outbox_recipient"), "field": "to", "align": "left"},
+        {"name": "subject", "label": t("mail_outbox_subject"), "field": "subject", "align": "left"},
+        {"name": "attempts", "label": t("mail_outbox_attempts"), "field": "attempts", "align": "center"},
+        {"name": "next_attempt_at", "label": t("mail_outbox_next_attempt"), "field": "next_attempt_at", "align": "left"},
+        {"name": "last_error", "label": t("mail_outbox_last_error"), "field": "last_error", "align": "left"},
+    ]
+    failed_columns = [
+        {"name": "to", "label": t("mail_outbox_recipient"), "field": "to", "align": "left"},
+        {"name": "subject", "label": t("mail_outbox_subject"), "field": "subject", "align": "left"},
+        {"name": "attempts", "label": t("mail_outbox_attempts"), "field": "attempts", "align": "center"},
+        {"name": "failed_at", "label": t("mail_outbox_failed_at"), "field": "failed_at", "align": "left"},
+        {"name": "last_error", "label": t("mail_outbox_last_error"), "field": "last_error", "align": "left"},
+    ]
+
+    async def render_tab(state: str):
+        table_container.clear()
+        rows = await _load_rows(state)
+        with table_container:
+            if not rows:
+                ui.label(t("mail_outbox_empty")).classes("text-grey")
+                return
+            cols = pending_columns if state == "pending" else failed_columns
+            ui.table(columns=cols, rows=rows, row_key="to").props("flat bordered dense").classes("w-full")
+
+    with ui.tabs() as tabs:
+        pending_tab = ui.tab(t("mail_outbox_pending"))
+        failed_tab = ui.tab(t("mail_outbox_failed"))
+    tabs.on_value_change(lambda e: render_tab("pending" if e.value == t("mail_outbox_pending") else "failed"))
+    tabs.value = t("mail_outbox_pending")
+    await render_tab("pending")
