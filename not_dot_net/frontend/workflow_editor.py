@@ -647,8 +647,8 @@ class WorkflowEditorDialog:
             checkbox_names = [f.name for f in step.fields
                               if f.type == "checkbox" and f.name != field.name]
             current_when = field.visible_when or {}
-            current_key = next(iter(current_when), None) if current_when else None
-            current_val = current_when.get(current_key) if current_key else None
+            current_key = next(iter(current_when), None)
+            current_val = current_when.get(current_key)
 
             ui.label(t("wf_visible_when_help")).classes("text-sm q-mt-sm")
             with ui.row().classes("w-full items-center gap-2"):
@@ -658,7 +658,7 @@ class WorkflowEditorDialog:
                 ).props("dense outlined").classes("grow")
                 ui.label("=").classes("text-grey")
                 val_select = ui.select(
-                    [True, False],
+                    [None, True, False],
                     value=current_val if isinstance(current_val, bool) else None,
                 ).props("dense outlined").classes("w-24")
 
