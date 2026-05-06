@@ -28,3 +28,17 @@ def test_rule_with_multiple_keys_is_and():
     assert is_field_visible(f, {"a": True, "b": "y"}) is True
     assert is_field_visible(f, {"a": True, "b": "z"}) is False
     assert is_field_visible(f, {"a": False, "b": "y"}) is False
+
+
+def test_required_skip_uses_same_predicate():
+    """Demonstrate the contract: if is_field_visible is False, callers can
+    treat the field as 'effectively not required'. (The render and submit
+    paths both use this exact rule.)"""
+    f = FieldConfig(name="zrr_topic", type="text", required=True,
+                    visible_when={"zrr": True})
+
+    # Required + hidden → skip (predicate returns False)
+    assert is_field_visible(f, {"zrr": False}) is False
+
+    # Required + visible + empty → caller will flag as missing
+    assert is_field_visible(f, {"zrr": True}) is True

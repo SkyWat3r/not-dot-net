@@ -218,7 +218,10 @@ async def render_step_form(
             collected = _collect_data(fields)
             missing = [
                 t(f.label) if f.label else f.name for f in step.fields
-                if f.required and f.type != "file" and not collected.get(f.name)
+                if f.required
+                and f.type != "file"
+                and is_field_visible(f, collected)
+                and not collected.get(f.name)
             ]
             if missing:
                 ui.notify(f"{t('required_field')}: {', '.join(missing)}", color="negative")
@@ -235,8 +238,9 @@ async def render_step_form(
 
 
 def _render_completion_indicator(step: WorkflowStepConfig, data: dict, files: dict):
-    """Show which required fields are filled for partial-save steps."""
-    required = [f for f in step.fields if f.required]
+    """Show which required, currently-visible fields are filled (partial save)."""
+    from not_dot_net.config import is_field_visible
+    required = [f for f in step.fields if f.required and is_field_visible(f, data)]
     if not required:
         return
     filled = sum(
