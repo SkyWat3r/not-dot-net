@@ -349,6 +349,9 @@ async def _render_mail_outbox(user):
     with ui.tabs() as tabs:
         ui.tab("pending", label=t("mail_outbox_pending"))
         ui.tab("failed", label=t("mail_outbox_failed"))
-    tabs.on_value_change(lambda e: render_tab(e.value))
+    async def _on_tab_change(e):
+        await render_tab(e.value)
+
+    tabs.on_value_change(_on_tab_change)
     tabs.value = "pending"
     await render_tab("pending")
