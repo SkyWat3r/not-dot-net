@@ -313,3 +313,29 @@ async def test_send_one_production_dev_catch_all_overrides_recipient():
 
     msg = mock_send.await_args.args[0]
     assert msg["To"] == "qa@test.local"
+
+
+async def test_run_outbox_worker_processes_pending_then_sleeps():
+    """The worker drains a pending row, then sleeps until the next ready row."""
+    import asyncio
+    from not_dot_net.backend.mail import send_mail
+    from not_dot_net.backend.mail_outbox import run_outbox_worker
+
+    await send_mail("u@test.local", "Hi", "<p>body</p>")
+
+    task = asyncio.create_task(run_outbox_worker())
+    # Yield enough times for the worker to pick up the row and process it.
+    for _ in range(50):
+        await asyncio.sleep(0)
+        async with session_scope() as session:
+            row = (await session.execute(select(MailOutbox))).scalar_one()
+        if row.sent_at is not None:
+            break
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert row.sent_at is not None

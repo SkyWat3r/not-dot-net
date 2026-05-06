@@ -125,3 +125,41 @@ async def _drain_outbox_once() -> int:
             await session.commit()
             processed += 1
     return processed
+
+
+async def run_outbox_worker() -> None:
+    """Forever: drain pending rows, sleep until the next one is due (≤ 60s)."""
+    while True:
+        try:
+            await _drain_outbox_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Outbox worker iteration failed")
+
+        try:
+            sleep_s = await _seconds_until_next_attempt()
+        except Exception:
+            logger.exception("Failed to compute next outbox wakeup")
+            sleep_s = POLL_CEILING_S
+        await asyncio.sleep(sleep_s)
+
+
+async def _seconds_until_next_attempt() -> float:
+    """Return seconds until the soonest pending row's next_attempt_at,
+    bounded above by POLL_CEILING_S. Empty queue → ceiling."""
+    async with session_scope() as session:
+        result = await session.execute(
+            select(MailOutbox.next_attempt_at)
+            .where(
+                MailOutbox.sent_at.is_(None),
+                MailOutbox.failed_at.is_(None),
+            )
+            .order_by(MailOutbox.next_attempt_at)
+            .limit(1)
+        )
+        next_at = result.scalar_one_or_none()
+    if next_at is None:
+        return POLL_CEILING_S
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    return max(0.0, min(POLL_CEILING_S, (next_at - now).total_seconds()))

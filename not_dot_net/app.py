@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -75,6 +76,8 @@ def create_app(
         logger.info("Migrations complete")
         _lock_socketio_cors()
 
+    _worker_tasks: set = set()
+
     async def startup():
         logger.info("Running async startup...")
         if dev_mode:
@@ -85,12 +88,26 @@ def create_app(
         if _seed_fake_users:
             from not_dot_net.backend.seeding import seed_fake_users
             await seed_fake_users()
+
+        from not_dot_net.backend.mail_outbox import run_outbox_worker
+        outbox_task = asyncio.create_task(run_outbox_worker())
+        _worker_tasks.add(outbox_task)
+        outbox_task.add_done_callback(_worker_tasks.discard)
+        logger.info("Mail outbox worker started")
+
         from not_dot_net.backend.auth.ldap import start_connection_reaper
         start_connection_reaper()
         logger.info("Startup complete")
 
     async def shutdown():
         logger.info("Shutting down...")
+        for task in list(_worker_tasks):
+            task.cancel()
+        for task in list(_worker_tasks):
+            try:
+                await task
+            except (Exception, asyncio.CancelledError):
+                pass
         from not_dot_net.backend.auth.ldap import drop_all_connections
         drop_all_connections()
         logger.info("Shutdown complete")
