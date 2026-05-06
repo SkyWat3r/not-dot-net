@@ -5,15 +5,14 @@ in `app.startup`) sends them with capped exponential backoff. Single
 in-process worker; not safe across multiple replicas.
 """
 
-import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
-from sqlalchemy import Index, String, Text, func, select
+from sqlalchemy import Index, String, Text, func
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
-from not_dot_net.backend.db import Base, session_scope
+from not_dot_net.backend.db import Base
 
 logger = logging.getLogger("not_dot_net.mail_outbox")
 
@@ -32,6 +31,10 @@ POLL_CEILING_S = 60
 
 class MailOutbox(MappedAsDataclass, Base, kw_only=True):
     __tablename__ = "mail_outbox"
+    __table_args__ = (
+        Index("ix_mail_outbox_pending", "sent_at", "failed_at", "next_attempt_at"),
+        Index("ix_mail_outbox_failed_at", "failed_at"),
+    )
 
     to_address: Mapped[str] = mapped_column(String(255))
     subject: Mapped[str] = mapped_column(String(500))
@@ -43,12 +46,3 @@ class MailOutbox(MappedAsDataclass, Base, kw_only=True):
     sent_at: Mapped[datetime | None] = mapped_column(nullable=True, default=None)
     failed_at: Mapped[datetime | None] = mapped_column(nullable=True, default=None)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
-
-
-Index(
-    "ix_mail_outbox_pending",
-    MailOutbox.sent_at,
-    MailOutbox.failed_at,
-    MailOutbox.next_attempt_at,
-)
-Index("ix_mail_outbox_failed_at", MailOutbox.failed_at)
