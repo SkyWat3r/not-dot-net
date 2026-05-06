@@ -33,9 +33,15 @@ from not_dot_net.backend.db import session_scope
 
 @pytest.mark.asyncio
 async def test_store_and_read_encrypted_roundtrip():
+    from not_dot_net.backend.db import User
     content = b"This is a secret document"
     filename = "id_card.pdf"
-    uploader_id = uuid.uuid4()
+    async with session_scope() as session:
+        uploader = User(email="uploader@test.local", hashed_password="x")
+        session.add(uploader)
+        await session.commit()
+        await session.refresh(uploader)
+        uploader_id = uploader.id
 
     enc_file = await store_encrypted(content, filename, "application/pdf", uploader_id)
     assert enc_file.id is not None

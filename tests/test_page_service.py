@@ -41,7 +41,13 @@ async def test_create_and_get_page():
 
 
 async def test_create_page_stores_metadata():
-    author_id = uuid.uuid4()
+    from not_dot_net.backend.db import User, session_scope
+    async with session_scope() as session:
+        author = User(email="author@test.local", hashed_password="x")
+        session.add(author)
+        await session.commit()
+        await session.refresh(author)
+        author_id = author.id
     page = await create_page(
         title="Metadata",
         slug="metadata",

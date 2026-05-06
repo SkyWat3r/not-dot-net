@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from not_dot_net.backend.db import Base
@@ -7,12 +8,20 @@ from not_dot_net.backend.secrets import AppSecrets
 from not_dot_net.backend.users import init_user_secrets
 
 
+def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+    # Match production PostgreSQL semantics so FK violations surface in tests.
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 @pytest.fixture(autouse=True)
 async def setup_db():
     """Set up an in-memory SQLite DB and dev secrets for each test."""
     init_user_secrets(AppSecrets(jwt_secret="test-secret-that-is-long-enough-for-hs256", storage_secret="test-storage", file_encryption_key="test-file-encryption-key-32bytes!"))
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    event.listen(engine.sync_engine, "connect", _enable_sqlite_foreign_keys)
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     old_engine, old_session = db_module._engine, db_module._async_session_maker
     db_module._engine = engine

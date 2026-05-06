@@ -342,6 +342,10 @@ async def create_request(
             target_email=target_email,
         )
         session.add(req)
+        # Flush so the request row exists before the event references it.
+        # Without this, SQLAlchemy may emit the event INSERT first and
+        # PostgreSQL rejects it on workflow_event_request_id_fkey.
+        await session.flush()
 
         event = WorkflowEvent(
             request_id=req.id,
