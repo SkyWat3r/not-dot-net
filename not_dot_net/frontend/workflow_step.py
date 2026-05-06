@@ -145,7 +145,11 @@ async def render_step_form(
     max_upload_size_mb: int = 10,
 ):
     """Render a form step's fields. Returns dict of field name -> ui element."""
-    fields = {}
+    from not_dot_net.config import is_field_visible
+
+    fields: dict = {}
+    containers: dict = {}
+    state: dict = dict(data)  # mutable working copy for visibility predicates
 
     # Group consecutive half_width fields into pairs for row layout
     groups: list[list] = []
@@ -158,14 +162,43 @@ async def render_step_form(
         else:
             groups.append([field_cfg])
 
+    async def _wrap(field_cfg, width_class):
+        with ui.element("div").classes(width_class) as container:
+            await _render_field(field_cfg, data, fields, files, on_file_upload, max_upload_size_mb, "w-full")
+        containers[field_cfg.name] = container
+        container.set_visibility(is_field_visible(field_cfg, state))
+
     for group in groups:
         is_pair = len(group) == 2 and group[0].half_width
         if is_pair:
             with ui.row().classes("w-full gap-4"):
                 for field_cfg in group:
-                    await _render_field(field_cfg, data, fields, files, on_file_upload, max_upload_size_mb, "flex-1 min-w-[200px]")
+                    await _wrap(field_cfg, "flex-1 min-w-[200px]")
         else:
-            await _render_field(group[0], data, fields, files, on_file_upload, max_upload_size_mb, "w-full")
+            await _wrap(group[0], "w-full")
+
+    # After every field is rendered, attach reactivity to checkboxes that
+    # are referenced by any visible_when in this step.
+    referenced = {
+        key
+        for f in step.fields
+        if f.visible_when
+        for key in f.visible_when.keys()
+    }
+
+    def _refresh_visibility():
+        collected = _collect_data(fields)
+        state.clear()
+        state.update(collected)
+        for f in step.fields:
+            c = containers.get(f.name)
+            if c is not None:
+                c.set_visibility(is_field_visible(f, state))
+
+    for ref_name in referenced:
+        widget = fields.get(ref_name)
+        if widget is not None and hasattr(widget, "on_value_change"):
+            widget.on_value_change(lambda e, _r=_refresh_visibility: _r())
 
     # Date-pair: show duration when both departure_date and return_date are set
     if "departure_date" in fields and "return_date" in fields:
