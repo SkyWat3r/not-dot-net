@@ -42,3 +42,60 @@ def test_required_skip_uses_same_predicate():
 
     # Required + visible + empty → caller will flag as missing
     assert is_field_visible(f, {"zrr": True}) is True
+
+
+import pytest
+from nicegui import ui
+from nicegui.testing import User
+
+
+async def test_form_hides_field_when_checkbox_false(user: User):
+    """Rendering a step with a visible_when text field: the dependent field
+    is hidden when the checkbox is False, visible when True."""
+    from not_dot_net.frontend.workflow_step import render_step_form
+    from not_dot_net.config import WorkflowStepConfig, FieldConfig
+
+    step = WorkflowStepConfig(
+        key="s1", type="form",
+        fields=[
+            FieldConfig(name="zrr", type="checkbox", label="ZRR"),
+            FieldConfig(name="zrr_topic", type="text", label="Topic",
+                        visible_when={"zrr": True}),
+        ],
+        actions=["submit"],
+    )
+
+    async def on_submit(data):
+        pass
+
+    @ui.page("/_visibility_off")
+    async def _page():
+        await render_step_form(step, data={"zrr": False}, on_submit=on_submit)
+
+    await user.open("/_visibility_off")
+    await user.should_not_see("Topic")
+
+
+async def test_form_shows_field_when_checkbox_true(user: User):
+    from not_dot_net.frontend.workflow_step import render_step_form
+    from not_dot_net.config import WorkflowStepConfig, FieldConfig
+
+    step = WorkflowStepConfig(
+        key="s1", type="form",
+        fields=[
+            FieldConfig(name="zrr", type="checkbox", label="ZRR"),
+            FieldConfig(name="zrr_topic", type="text", label="Topic",
+                        visible_when={"zrr": True}),
+        ],
+        actions=["submit"],
+    )
+
+    async def on_submit(data):
+        pass
+
+    @ui.page("/_visibility_on")
+    async def _page():
+        await render_step_form(step, data={"zrr": True}, on_submit=on_submit)
+
+    await user.open("/_visibility_on")
+    await user.should_see("Topic")

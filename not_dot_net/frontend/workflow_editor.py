@@ -658,7 +658,7 @@ class WorkflowEditorDialog:
                 ).props("dense outlined").classes("grow")
                 ui.label("=").classes("text-grey")
                 val_select = ui.select(
-                    [None, True, False],
+                    [True, False],
                     value=current_val if isinstance(current_val, bool) else None,
                 ).props("dense outlined").classes("w-24")
 
