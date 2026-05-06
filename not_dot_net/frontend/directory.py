@@ -459,7 +459,7 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
             _add_field("end_date", t("end_date"),
                        str(person.end_date) if person.end_date else "")
 
-        if is_admin and not is_own:
+        if is_admin:
             from not_dot_net.backend.roles import roles_config
             roles_cfg = await roles_config.get()
             role_options = sorted(roles_cfg.roles.keys())
