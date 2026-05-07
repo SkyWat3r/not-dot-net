@@ -1133,3 +1133,65 @@ async def test_compute_warnings_flags_dangling_visible_when(user: User, admin_us
     warnings = dlg.compute_warnings()
     assert any("zrr_topic" in w and "'zrr'" in w for w in warnings)
     assert any("cdd_end" in w and "'status'" in w for w in warnings)
+
+
+async def test_visible_when_picker_does_not_rebuild_detail_pane(user: User, admin_user):
+    """Picking a checkbox in the visible_when key picker must not rebuild the
+    detail pane.
+
+    Bug: the per-field "More" expander's visible_when `_apply` callback called
+    `_refresh_detail()` after every value change. When the user picked only the
+    key (without yet picking True/False), `rule = None` so the model wasn't
+    updated; the rebuild then read the empty rule back, collapsing the
+    expansion and resetting the picker to None — the user could never finish
+    setting the rule.
+    """
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "demo": WorkflowConfig(
+            label="Demo",
+            steps=[WorkflowStepConfig(
+                key="s1", type="form",
+                fields=[
+                    FieldConfig(name="is_zrr", label="ZRR?", type="checkbox"),
+                    FieldConfig(name="zrr_topic", label="ZRR topic", type="text"),
+                ],
+                actions=["submit"],
+            )],
+        ),
+    }))
+
+    captured = {}
+
+    @ui.page("/_visible_when_no_rebuild")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_visible_when_no_rebuild")
+    dlg = captured["dlg"]
+    dlg.select("demo", "s1")
+
+    refresh_count = {"n": 0}
+    original_refresh = dlg._refresh_detail
+
+    def _counting_refresh():
+        refresh_count["n"] += 1
+        original_refresh()
+
+    dlg._refresh_detail = _counting_refresh
+
+    # Picking only the key (val still None) — must not trigger a rebuild.
+    dlg._apply_visible_when("demo", "s1", 1, "is_zrr", None)
+    assert refresh_count["n"] == 0
+    assert dlg.working_copy.workflows["demo"].steps[0].fields[1].visible_when is None
+
+    # Now picking the value completes the rule — still no rebuild.
+    dlg._apply_visible_when("demo", "s1", 1, "is_zrr", True)
+    assert refresh_count["n"] == 0
+    assert dlg.working_copy.workflows["demo"].steps[0].fields[1].visible_when == {"is_zrr": True}
+
+    # Clearing the key wipes the rule — still no rebuild.
+    dlg._apply_visible_when("demo", "s1", 1, None, True)
+    assert refresh_count["n"] == 0
+    assert dlg.working_copy.workflows["demo"].steps[0].fields[1].visible_when is None

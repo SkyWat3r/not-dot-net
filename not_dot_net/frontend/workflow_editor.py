@@ -664,13 +664,21 @@ class WorkflowEditorDialog:
 
             def _apply(_e=None, w=wf_key, sk=step_key, i=idx,
                        ks=key_select, vs=val_select):
-                k, v = ks.value, vs.value
-                rule = {k: v} if k and v is not None else None
-                self.set_field_attr(w, sk, i, "visible_when", rule)
-                self._refresh_detail()
+                self._apply_visible_when(w, sk, i, ks.value, vs.value)
 
             key_select.on_value_change(_apply)
             val_select.on_value_change(_apply)
+
+    def _apply_visible_when(self, wf_key: str, step_key: str, idx: int,
+                            key: str | None, value) -> None:
+        """Update a field's `visible_when` from picker state.
+
+        Called on every value change of either picker; partial state
+        (key without value, or vice-versa) clears the rule but must not
+        rebuild the detail pane — that would destroy the picker mid-edit.
+        """
+        rule = {key: value} if key and value is not None else None
+        self.set_field_attr(wf_key, step_key, idx, "visible_when", rule)
 
     def _safe_field_rename(self, wf_key: str, step_key: str, idx: int, new_name: str) -> None:
         try:
