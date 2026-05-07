@@ -57,16 +57,20 @@ async def _smtp_send(to: str, subject: str, body_html: str, mail_cfg) -> None:
     Honors `dev_catch_all` (overrides `to`). Does NOT honor `dev_mode` —
     the caller decides whether to short-circuit for dev mode.
     """
+    from not_dot_net.backend.mail import SmtpTlsMode
+
     msg = EmailMessage()
     msg["From"] = mail_cfg.from_address
     msg["To"] = mail_cfg.dev_catch_all or to
     msg["Subject"] = subject
     msg.set_content(body_html, subtype="html")
+    mode = mail_cfg.smtp_tls_mode
     await aiosmtplib.send(
         msg,
         hostname=mail_cfg.smtp_host,
         port=mail_cfg.smtp_port,
-        start_tls=mail_cfg.smtp_tls,
+        use_tls=(mode == SmtpTlsMode.SMTPS),
+        start_tls=(mode == SmtpTlsMode.STARTTLS),
         username=mail_cfg.smtp_user or None,
         password=mail_cfg.smtp_password or None,
     )

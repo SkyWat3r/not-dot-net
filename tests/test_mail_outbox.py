@@ -198,16 +198,16 @@ async def test_send_one_dev_catch_all_redirect(caplog):
 
 
 async def test_send_one_production_passes_smtp_settings_to_aiosmtplib():
-    """SMTP host/port/start_tls/username/password are propagated correctly."""
+    """SMTP host/port/start_tls/use_tls/username/password are propagated correctly."""
     from unittest.mock import AsyncMock, patch
     from not_dot_net.backend.mail_outbox import _send_one, MailOutbox
-    from not_dot_net.backend.mail import MailConfig
+    from not_dot_net.backend.mail import MailConfig, SmtpTlsMode
 
     cfg = MailConfig(
         dev_mode=False,
         smtp_host="mail.example.test",
         smtp_port=2525,
-        smtp_tls=True,
+        smtp_tls_mode=SmtpTlsMode.STARTTLS,
         smtp_user="alice",
         smtp_password="hunter2",
         from_address="noreply@example.test",
@@ -230,8 +230,41 @@ async def test_send_one_production_passes_smtp_settings_to_aiosmtplib():
     assert kwargs["hostname"] == "mail.example.test"
     assert kwargs["port"] == 2525
     assert kwargs["start_tls"] is True
+    assert kwargs["use_tls"] is False
     assert kwargs["username"] == "alice"
     assert kwargs["password"] == "hunter2"
+
+
+async def test_send_one_smtps_mode_uses_tls_on_connect():
+    """SMTPS mode (port 465) sets use_tls=True and start_tls=False so
+    aiosmtplib opens a TLS socket from the first byte instead of waiting
+    for a plaintext greeting (which a postfix `smtps` listener never sends)."""
+    from unittest.mock import AsyncMock, patch
+    from not_dot_net.backend.mail_outbox import _send_one, MailOutbox
+    from not_dot_net.backend.mail import MailConfig, SmtpTlsMode
+
+    cfg = MailConfig(
+        dev_mode=False,
+        smtp_host="hermes.example.test",
+        smtp_port=465,
+        smtp_tls_mode=SmtpTlsMode.SMTPS,
+    )
+    row = MailOutbox(
+        to_address="bob@test.local",
+        subject="Hi",
+        body_html="<p>x</p>",
+        next_attempt_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+
+    with patch(
+        "not_dot_net.backend.mail_outbox.aiosmtplib.send",
+        new=AsyncMock(),
+    ) as mock_send:
+        await _send_one(row, cfg)
+
+    _, kwargs = mock_send.await_args
+    assert kwargs["use_tls"] is True
+    assert kwargs["start_tls"] is False
     assert row.sent_at is not None
 
 

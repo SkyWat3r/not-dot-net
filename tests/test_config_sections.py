@@ -116,11 +116,11 @@ async def test_ldap_config_registered():
 # --- MailConfig ---
 
 async def test_mail_config_defaults():
-    from not_dot_net.backend.mail import mail_config
+    from not_dot_net.backend.mail import mail_config, SmtpTlsMode
     cfg = await mail_config.get()
     assert cfg.smtp_host == "localhost"
     assert cfg.smtp_port == 587
-    assert cfg.smtp_tls is False
+    assert cfg.smtp_tls_mode == SmtpTlsMode.NONE
     assert cfg.smtp_user == ""
     assert cfg.smtp_password == ""
     assert cfg.from_address == "noreply@not-dot-net.dev"
@@ -129,11 +129,11 @@ async def test_mail_config_defaults():
 
 
 async def test_mail_config_roundtrip():
-    from not_dot_net.backend.mail import mail_config, MailConfig
+    from not_dot_net.backend.mail import mail_config, MailConfig, SmtpTlsMode
     custom = MailConfig(
         smtp_host="smtp.example.com",
         smtp_port=465,
-        smtp_tls=True,
+        smtp_tls_mode=SmtpTlsMode.SMTPS,
         smtp_user="smtp-user",
         smtp_password="smtp-secret",
         from_address="intranet@example.com",
@@ -144,12 +144,28 @@ async def test_mail_config_roundtrip():
     result = await mail_config.get()
     assert result.smtp_host == "smtp.example.com"
     assert result.smtp_port == 465
-    assert result.smtp_tls is True
+    assert result.smtp_tls_mode == SmtpTlsMode.SMTPS
     assert result.smtp_user == "smtp-user"
     assert result.smtp_password == "smtp-secret"
     assert result.from_address == "intranet@example.com"
     assert result.dev_mode is False
     assert result.dev_catch_all == "catchall@example.com"
+
+
+async def test_mail_config_legacy_smtp_tls_field_migrates():
+    """A row persisted under the old `smtp_tls: bool` shape rehydrates
+    cleanly: True → STARTTLS, False → NONE."""
+    from not_dot_net.backend.mail import MailConfig, SmtpTlsMode
+
+    legacy_true = MailConfig.model_validate({"smtp_tls": True})
+    assert legacy_true.smtp_tls_mode == SmtpTlsMode.STARTTLS
+
+    legacy_false = MailConfig.model_validate({"smtp_tls": False})
+    assert legacy_false.smtp_tls_mode == SmtpTlsMode.NONE
+
+    # New shape wins if both are present (defensive)
+    both = MailConfig.model_validate({"smtp_tls": True, "smtp_tls_mode": "smtps"})
+    assert both.smtp_tls_mode == SmtpTlsMode.SMTPS
 
 
 async def test_mail_config_registered():

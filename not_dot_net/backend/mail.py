@@ -8,8 +8,9 @@ that table and performs the actual SMTP send using the current
 
 import logging
 from datetime import datetime, timezone
+from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from not_dot_net.backend.app_config import section
 from not_dot_net.backend.db import session_scope
@@ -17,15 +18,36 @@ from not_dot_net.backend.db import session_scope
 logger = logging.getLogger("not_dot_net.mail")
 
 
+class SmtpTlsMode(str, Enum):
+    NONE = "none"
+    STARTTLS = "starttls"      # connect plaintext, upgrade with STARTTLS (typical port 587)
+    SMTPS = "smtps"            # TLS on connect (typical port 465)
+
+
 class MailConfig(BaseModel):
     smtp_host: str = "localhost"
     smtp_port: int = 587
-    smtp_tls: bool = False
+    smtp_tls_mode: SmtpTlsMode = SmtpTlsMode.NONE
     smtp_user: str = ""
     smtp_password: str = ""
     from_address: str = "noreply@not-dot-net.dev"
     dev_mode: bool = True
     dev_catch_all: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_smtp_tls(cls, data):
+        """Translate the pre-2026-05-07 `smtp_tls: bool` field to
+        `smtp_tls_mode` so existing config rows keep working without
+        admin intervention. Old True → starttls (the only mode the old
+        bool encoded); old False → none."""
+        if not isinstance(data, dict):
+            return data
+        if "smtp_tls" in data and "smtp_tls_mode" not in data:
+            data["smtp_tls_mode"] = (
+                SmtpTlsMode.STARTTLS.value if data.pop("smtp_tls") else SmtpTlsMode.NONE.value
+            )
+        return data
 
 
 mail_config = section("mail", MailConfig, label="Email / SMTP")
