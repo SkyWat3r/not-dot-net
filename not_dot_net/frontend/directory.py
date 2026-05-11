@@ -295,41 +295,20 @@ async def _render_edit(container, person: User, current_user: User, state: dict)
 
 
 def _prompt_ad_credentials_then_save(person, current_user, save_callback):
-    """Prompt for AD credentials only when saving changes to AD-mapped fields."""
-    from not_dot_net.backend.auth.ldap import (
-        ldap_config, get_ldap_connect,
-        _ldap_bind, LdapModifyError, store_user_connection,
-    )
+    """Adapter — kept so existing call site doesn't change.
 
-    dialog = ui.dialog()
-    with dialog, ui.card():
-        ui.label(t("confirm_password_to_save_ad"))
-        username_input = ui.input(t("ad_admin_username")).props("outlined dense")
-        password_input = ui.input(t("password"), password=True).props("outlined dense")
-        error_label = ui.label("").classes("text-negative")
+    Wraps the shared `prompt_ad_credentials` dialog; fetches the cached
+    connection after bind to pass as `ad_conn=` to save_callback.
+    """
+    import asyncio
 
-        async def submit():
-            bind_user = username_input.value.strip()
-            if not bind_user or not password_input.value:
-                return
-            cfg = await ldap_config.get()
-            try:
-                conn = _ldap_bind(bind_user, password_input.value, cfg, get_ldap_connect())
-            except LdapModifyError as e:
-                msg = str(e)
-                error_label.set_text(
-                    t("ad_bind_failed") if "bind" in msg.lower() else t("ad_write_failed", error=msg)
-                )
-                return
-            store_user_connection(str(current_user.id), conn)
-            dialog.close()
-            await save_callback(ad_conn=conn)
+    from not_dot_net.backend.auth.ldap import get_user_connection
+    from not_dot_net.frontend.ad_credentials import prompt_ad_credentials
 
-        with ui.row():
-            ui.button(t("submit"), on_click=submit).props("flat color=primary")
-            ui.button(t("cancel"), on_click=dialog.close).props("flat")
+    async def _on_bind(_bind_user, _bind_pw):
+        await save_callback(ad_conn=get_user_connection(str(current_user.id)))
 
-    dialog.open()
+    asyncio.create_task(prompt_ad_credentials(current_user, _on_bind))
 
 
 def _render_ad_enable_disable_button(container, person: User, current_user: User) -> None:
