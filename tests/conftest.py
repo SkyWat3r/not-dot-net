@@ -34,6 +34,7 @@ async def setup_db():
     import not_dot_net.backend.encrypted_storage  # noqa: F401
     import not_dot_net.backend.tenure_service  # noqa: F401
     import not_dot_net.backend.mail_outbox  # noqa: F401
+    import not_dot_net.backend.uid_allocator  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
