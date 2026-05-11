@@ -76,6 +76,6 @@ async def allocate_uid(user_id: uuid.UUID, sam_account: str) -> int:
     await log_audit(
         category="ad", action="allocate_uid",
         actor_id=None, target_id=str(user_id),
-        detail=f'{{"uid": {chosen}, "sam": "{sam_account}"}}',
+        detail=f"uid={chosen} sam={sam_account}",
     )
     return chosen
