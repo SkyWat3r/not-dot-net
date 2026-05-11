@@ -716,3 +716,91 @@ async def sync_all_from_ldap(
             logger.warning("Failed to sync LDAP user '%s': %s", info.email, e)
 
     return result
+
+
+@dataclass(frozen=True)
+class NewAdUser:
+    sam_account: str
+    given_name: str
+    surname: str
+    display_name: str
+    mail: str
+    description: str | None
+    ou_dn: str
+    uid_number: int
+    gid_number: int
+    login_shell: str
+    home_directory: str
+    initial_password: str
+    must_change_password: bool = True
+
+
+def _ad_encode_password(plain: str) -> bytes:
+    """AD requires unicodePwd as UTF-16LE of the quoted password."""
+    return f'"{plain}"'.encode("utf-16-le")
+
+
+_UAC_NORMAL_ACCOUNT = 0x200
+_UAC_NORMAL_ACCOUNT_DISABLED = 0x202
+
+
+def ldap_create_user(
+    new_user: NewAdUser,
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> str:
+    """Create a new AD user and return its DN.
+
+    Order: add disabled → set password → optionally set pwdLastSet=0 → enable account.
+    Raises LdapModifyError on any failure.
+    """
+    dn = f"CN={new_user.display_name},{new_user.ou_dn}"
+    object_class = ["top", "person", "organizationalPerson", "user"]
+    attrs = {
+        "sAMAccountName": new_user.sam_account,
+        "userPrincipalName": f"{new_user.sam_account}@{ldap_cfg.domain}",
+        "givenName": new_user.given_name,
+        "sn": new_user.surname,
+        "displayName": new_user.display_name,
+        "cn": new_user.display_name,
+        "mail": new_user.mail,
+        "uidNumber": new_user.uid_number,
+        "gidNumber": new_user.gid_number,
+        "loginShell": new_user.login_shell,
+        "unixHomeDirectory": new_user.home_directory,
+        "userAccountControl": str(_UAC_NORMAL_ACCOUNT_DISABLED),
+    }
+    if new_user.description:
+        attrs["description"] = new_user.description
+
+    conn = _ldap_bind(bind_username, bind_password, ldap_cfg, connect)
+    try:
+        ok = conn.add(dn, object_class, attrs)
+        if not ok:
+            raise LdapModifyError(
+                f"add failed: {conn.result.get('description')} ({conn.result.get('message')})"
+            )
+
+        ok = conn.modify(dn, {"unicodePwd": [(MODIFY_REPLACE, [_ad_encode_password(new_user.initial_password)])]})
+        if not ok:
+            raise LdapModifyError(
+                f"set password failed: {conn.result.get('description')} ({conn.result.get('message')})"
+            )
+
+        if new_user.must_change_password:
+            ok = conn.modify(dn, {"pwdLastSet": [(MODIFY_REPLACE, ["0"])]})
+            if not ok:
+                raise LdapModifyError(
+                    f"pwdLastSet failed: {conn.result.get('description')} ({conn.result.get('message')})"
+                )
+
+        ok = conn.modify(dn, {"userAccountControl": [(MODIFY_REPLACE, [str(_UAC_NORMAL_ACCOUNT)])]})
+        if not ok:
+            raise LdapModifyError(
+                f"enable failed: {conn.result.get('description')} ({conn.result.get('message')})"
+            )
+    finally:
+        conn.unbind()
+    return dn

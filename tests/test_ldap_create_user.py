@@ -68,3 +68,95 @@ def test_ldap_user_exists_by_sam_false():
     conn = _FakeConn(search_returns_entries=[])
     cfg = LdapConfig(base_dn="DC=x,DC=y")
     assert ldap_user_exists_by_sam("nope", "admin", "pw", cfg, _fake_connect_returning(conn)) is False
+
+
+def _new_user_kwargs(**overrides):
+    base = dict(
+        sam_account="alice",
+        given_name="Alice",
+        surname="Smith",
+        display_name="Alice Smith",
+        mail="alice.smith@example.com",
+        description="newcomer",
+        ou_dn="OU=Users,DC=x,DC=y",
+        uid_number=10000,
+        gid_number=10000,
+        login_shell="/bin/bash",
+        home_directory="/home/alice",
+        initial_password="Init!Pass1234",
+        must_change_password=True,
+    )
+    base.update(overrides)
+    return base
+
+
+def test_ldap_create_user_happy_path():
+    from not_dot_net.backend.auth.ldap import ldap_create_user, NewAdUser, LdapConfig
+    conn = _FakeConn()
+    cfg = LdapConfig(base_dn="DC=x,DC=y")
+    new_user = NewAdUser(**_new_user_kwargs())
+
+    dn = ldap_create_user(new_user, "admin", "pw", cfg, _fake_connect_returning(conn))
+    assert dn == "CN=Alice Smith,OU=Users,DC=x,DC=y"
+
+    ops = [c[0] for c in conn.calls]
+    # Expected order: add → modify (password) → modify (pwdLastSet=0) → modify (UAC=0x200)
+    assert ops == ["add", "modify", "modify", "modify"]
+
+    _, (added_dn, oc, attrs) = conn.calls[0]
+    assert added_dn == dn
+    assert set(["top", "person", "organizationalPerson", "user"]).issubset(set(oc))
+    assert attrs["sAMAccountName"] == "alice"
+    assert attrs["uidNumber"] == 10000
+    assert attrs["gidNumber"] == 10000
+    assert attrs["loginShell"] == "/bin/bash"
+    assert attrs["unixHomeDirectory"] == "/home/alice"
+    assert attrs["mail"] == "alice.smith@example.com"
+    assert attrs["description"] == "newcomer"
+    assert attrs["userAccountControl"] == "514"  # 0x202
+
+    # Password is UTF-16LE quoted
+    _, (_, pwd_changes) = conn.calls[1]
+    pwd_value = pwd_changes["unicodePwd"][0][1][0]
+    assert pwd_value == ('"Init!Pass1234"').encode("utf-16-le")
+
+    # pwdLastSet=0
+    _, (_, pls_changes) = conn.calls[2]
+    assert pls_changes["pwdLastSet"][0][1] == ["0"]
+
+    # Final UAC enable
+    _, (_, uac_changes) = conn.calls[3]
+    assert uac_changes["userAccountControl"][0][1] == ["512"]  # 0x200
+
+
+def test_ldap_create_user_add_failure_raises_before_password():
+    from not_dot_net.backend.auth.ldap import (
+        ldap_create_user, NewAdUser, LdapConfig, LdapModifyError,
+    )
+    conn = _FakeConn(add_ok=False)
+    cfg = LdapConfig(base_dn="DC=x,DC=y")
+    with pytest.raises(LdapModifyError):
+        ldap_create_user(NewAdUser(**_new_user_kwargs()), "a", "p", cfg, _fake_connect_returning(conn))
+    assert [c[0] for c in conn.calls] == ["add"]
+
+
+def test_ldap_create_user_password_failure_raises():
+    from not_dot_net.backend.auth.ldap import (
+        ldap_create_user, NewAdUser, LdapConfig, LdapModifyError,
+    )
+    conn = _FakeConn(modify_ok=False)
+    cfg = LdapConfig(base_dn="DC=x,DC=y")
+    with pytest.raises(LdapModifyError):
+        ldap_create_user(NewAdUser(**_new_user_kwargs()), "a", "p", cfg, _fake_connect_returning(conn))
+    assert [c[0] for c in conn.calls] == ["add", "modify"]  # add ok, password modify fails
+
+
+def test_ldap_create_user_no_force_change_skips_pwdlastset():
+    from not_dot_net.backend.auth.ldap import ldap_create_user, NewAdUser, LdapConfig
+    conn = _FakeConn()
+    cfg = LdapConfig(base_dn="DC=x,DC=y")
+    new_user = NewAdUser(**_new_user_kwargs(must_change_password=False))
+    ldap_create_user(new_user, "a", "p", cfg, _fake_connect_returning(conn))
+    ops = [c[0] for c in conn.calls]
+    # add → unicodePwd modify → UAC enable (no pwdLastSet)
+    assert ops == ["add", "modify", "modify"]
