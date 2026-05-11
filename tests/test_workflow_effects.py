@@ -106,3 +106,62 @@ async def test_add_to_groups_partial_failure_returned(monkeypatch):
                                 ad_creds=("a", "p"), actor=MagicMock())
     assert not result.succeeded
     assert result.failures == {"CN=g2,DC=x": "no rights"}
+
+
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_run_effects_skips_non_matching_actions(monkeypatch):
+    from not_dot_net.backend.workflow_effects import run_effects, EFFECT_REGISTRY, EffectResult
+    from not_dot_net.config import StepEffectConfig
+
+    calls = []
+
+    # Patch each handler instance in the registry so we don't hit LDAP/DB.
+    for kind, handler in EFFECT_REGISTRY.items():
+        async def fake_run(request, step, action, params, ad_creds, actor, _kind=kind):
+            calls.append((_kind, action))
+            return EffectResult(kind=_kind, succeeded=True)
+        monkeypatch.setattr(handler, "run", fake_run)
+
+    step = MagicMock(effects=[
+        StepEffectConfig(on_action="approve", kind="ad_enable_account", params={}),
+        StepEffectConfig(on_action="reject", kind="ad_disable_account", params={}),
+    ])
+    results = await run_effects(
+        request=MagicMock(), step=step, action="approve",
+        ad_creds=("a", "p"), actor=MagicMock(),
+    )
+    assert len(results) == 1
+    assert results[0].kind == "ad_enable_account"
+
+
+@pytest.mark.asyncio
+async def test_run_effects_raises_when_creds_missing():
+    from not_dot_net.backend.workflow_effects import (
+        run_effects, AdCredentialsRequired,
+    )
+    from not_dot_net.config import StepEffectConfig
+    step = MagicMock(effects=[
+        StepEffectConfig(on_action="approve", kind="ad_enable_account", params={}),
+    ])
+    with pytest.raises(AdCredentialsRequired):
+        await run_effects(
+            request=MagicMock(), step=step, action="approve",
+            ad_creds=None, actor=MagicMock(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_effects_no_matching_returns_empty():
+    from not_dot_net.backend.workflow_effects import run_effects
+    from not_dot_net.config import StepEffectConfig
+    step = MagicMock(effects=[
+        StepEffectConfig(on_action="reject", kind="ad_disable_account", params={}),
+    ])
+    results = await run_effects(
+        request=MagicMock(), step=step, action="approve",
+        ad_creds=("a", "p"), actor=MagicMock(),
+    )
+    assert results == []

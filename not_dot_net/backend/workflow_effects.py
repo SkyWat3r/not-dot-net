@@ -155,3 +155,58 @@ EFFECT_REGISTRY: dict[str, BaseEffectHandler] = {
         AdDisableAccountHandler(),
     ]
 }
+
+
+async def run_effects(
+    *,
+    request,
+    step,
+    action: str,
+    ad_creds: tuple[str, str] | None,
+    actor,
+) -> list[EffectResult]:
+    """Fire all effects on this step whose on_action matches.
+
+    Raises AdCredentialsRequired if any matching effect needs creds and none were given.
+    Audit-logs each effect's outcome.
+    """
+    from not_dot_net.backend.audit import log_audit
+
+    matching = [e for e in (getattr(step, "effects", None) or []) if e.on_action == action]
+    if not matching:
+        return []
+    if any(EFFECT_REGISTRY.get(e.kind) and EFFECT_REGISTRY[e.kind].requires_ad_credentials for e in matching):
+        if not ad_creds:
+            raise AdCredentialsRequired(
+                f"Step '{getattr(step, 'key', '?')}' action '{action}' requires AD admin credentials"
+            )
+
+    results: list[EffectResult] = []
+    for effect in matching:
+        handler = EFFECT_REGISTRY.get(effect.kind)
+        if not handler:
+            res = EffectResult(
+                kind=effect.kind, succeeded=False,
+                failures={"_kind": f"unknown effect kind: {effect.kind}"},
+            )
+            results.append(res)
+            await log_audit(
+                category="ad", action=effect.kind,
+                actor_id=str(getattr(actor, "id", None)) if actor else None,
+                target_id=None,
+                detail=f"unknown_kind={effect.kind}",
+            )
+            continue
+        try:
+            res = await handler.run(request, step, action, effect.params, ad_creds, actor)
+        except ValueError as e:
+            res = EffectResult(kind=effect.kind, succeeded=False, failures={"_validation": str(e)})
+        results.append(res)
+        failures_summary = ",".join(res.failures) if res.failures else ""
+        await log_audit(
+            category="ad", action=effect.kind,
+            actor_id=str(getattr(actor, "id", None)) if actor else None,
+            target_id=None,
+            detail=f"succeeded={res.succeeded} failures={failures_summary}",
+        )
+    return results

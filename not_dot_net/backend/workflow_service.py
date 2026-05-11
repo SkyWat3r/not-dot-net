@@ -396,6 +396,7 @@ async def submit_step(
     comment: str | None = None,
     actor_user=None,
     actor_token: str | None = None,
+    ad_creds: tuple[str, str] | None = None,
 ) -> WorkflowRequest:
     """Submit an action on the current step.
 
@@ -420,6 +421,7 @@ async def submit_step(
             raise PermissionError("No actor provided")
 
         next_step, new_status = compute_next_step(wf, req.current_step, action)
+        step_cfg = get_current_step_config(req, wf)
 
         # Merge new data
         if data:
@@ -517,6 +519,14 @@ async def submit_step(
             target_type="request", target_id=req.id,
             detail=f"step={event.step_key} status={new_status}",
         )
+
+        # Fire any AD effects declared on the step for this action.
+        if getattr(step_cfg, "effects", None):
+            from not_dot_net.backend.workflow_effects import run_effects
+            await run_effects(
+                request=req, step=step_cfg, action=action,
+                ad_creds=ad_creds, actor=actor_user,
+            )
 
         # Fire notifications (after commit, best-effort)
         try:
