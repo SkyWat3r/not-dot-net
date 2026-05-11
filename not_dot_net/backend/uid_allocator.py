@@ -79,3 +79,76 @@ async def allocate_uid(user_id: uuid.UUID, sam_account: str) -> int:
         detail=f"uid={chosen} sam={sam_account}",
     )
     return chosen
+
+
+@dataclass(frozen=True)
+class SeedResult:
+    seeded: int
+    skipped: int
+
+
+def _search_ad_uids(ldap_cfg, bind_username: str, bind_password: str):
+    """Bind and paged-search AD for entries with uidNumber. Returns list of ldap3 entries.
+
+    Wrapped in its own function so tests can monkeypatch it.
+    """
+    from ldap3 import SUBTREE
+    from not_dot_net.backend.auth.ldap import _ldap_bind, get_ldap_connect
+
+    conn = _ldap_bind(bind_username, bind_password, ldap_cfg, get_ldap_connect())
+    try:
+        ok = conn.search(
+            search_base=ldap_cfg.base_dn,
+            search_filter="(&(objectClass=user)(uidNumber=*))",
+            search_scope=SUBTREE,
+            attributes=["uidNumber", "sAMAccountName"],
+            paged_size=500,
+        )
+        if not ok:
+            return []
+        return list(conn.entries)
+    finally:
+        conn.unbind()
+
+
+async def seed_from_ad(bind_username: str, bind_password: str) -> SeedResult:
+    """Lock all existing AD UIDs into the allocation table. Idempotent."""
+    from not_dot_net.backend.ad_account_config import ad_account_config
+    from not_dot_net.backend.auth.ldap import ldap_config
+    from not_dot_net.backend.audit import log_audit
+
+    ldap_cfg = await ldap_config.get()
+    _ = await ad_account_config.get()  # ensure section materialized
+
+    entries = _search_ad_uids(ldap_cfg, bind_username, bind_password)
+    seeded = 0
+    skipped = 0
+    async with session_scope() as session:
+        existing = set(
+            (await session.execute(select(UidAllocation.uid))).scalars().all()
+        )
+        for entry in entries:
+            uid_val = entry.uidNumber.value
+            if uid_val is None:
+                continue
+            uid_int = int(uid_val)
+            if uid_int in existing:
+                skipped += 1
+                continue
+            sam = entry.sAMAccountName.value if entry.sAMAccountName.value else None
+            session.add(UidAllocation(
+                uid=uid_int,
+                source="seeded_from_ad",
+                user_id=None,
+                sam_account=sam,
+            ))
+            existing.add(uid_int)
+            seeded += 1
+        await session.commit()
+
+    await log_audit(
+        category="ad", action="seed_uids",
+        actor_id=None, target_id=None,
+        detail=f"seeded={seeded} skipped={skipped}",
+    )
+    return SeedResult(seeded=seeded, skipped=skipped)

@@ -85,3 +85,67 @@ async def test_allocate_uid_writes_audit_event():
     uid = await allocate_uid(uid_user, "audited")
     events = await list_audit_events(category="ad", action="allocate_uid")
     assert any(ev.target_id == str(uid_user) and str(uid) in str(ev.detail) for ev in events)
+
+
+class _FakeEntry:
+    def __init__(self, uid_number, sam):
+        from types import SimpleNamespace
+        self.uidNumber = SimpleNamespace(value=uid_number)
+        self.sAMAccountName = SimpleNamespace(value=sam)
+        self.entry_dn = f"CN={sam},OU=Users,DC=example,DC=com"
+
+
+class _FakeConn:
+    def __init__(self, entries):
+        self.entries = entries
+        self.bound = True
+
+    def search(self, *args, **kwargs):
+        return True
+
+    def unbind(self):
+        self.bound = False
+
+
+def _fake_connect_factory(entries):
+    def _connect(cfg, username, password):
+        return _FakeConn(entries)
+    return _connect
+
+
+@pytest.mark.asyncio
+async def test_seed_from_ad_inserts_seeded_rows(monkeypatch):
+    from not_dot_net.backend import uid_allocator
+    from not_dot_net.backend.uid_allocator import seed_from_ad
+
+    entries = [_FakeEntry(20000, "alice"), _FakeEntry(20001, "bob")]
+    monkeypatch.setattr(
+        uid_allocator,
+        "_search_ad_uids",
+        lambda cfg, user, pw: entries,
+    )
+    result = await seed_from_ad("admin", "secret")
+    assert result.seeded == 2
+    assert result.skipped == 0
+
+    async with session_scope() as session:
+        rows = (await session.execute(select(UidAllocation))).scalars().all()
+    assert {r.uid for r in rows} == {20000, 20001}
+    assert all(r.source == "seeded_from_ad" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_seed_from_ad_is_idempotent(monkeypatch):
+    from not_dot_net.backend import uid_allocator
+    from not_dot_net.backend.uid_allocator import seed_from_ad
+
+    entries = [_FakeEntry(30000, "x"), _FakeEntry(30001, "y")]
+    monkeypatch.setattr(
+        uid_allocator,
+        "_search_ad_uids",
+        lambda cfg, user, pw: entries,
+    )
+    first = await seed_from_ad("admin", "secret")
+    second = await seed_from_ad("admin", "secret")
+    assert first.seeded == 2 and first.skipped == 0
+    assert second.seeded == 0 and second.skipped == 2
