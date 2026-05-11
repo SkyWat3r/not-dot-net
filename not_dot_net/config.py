@@ -1,6 +1,6 @@
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from not_dot_net.backend.app_config import section
 
@@ -33,6 +33,17 @@ class NotificationRuleConfig(BaseModel):
     notify: list[str]  # role names or contextual: requester, target_person
 
 
+class StepEffectConfig(BaseModel):
+    on_action: str
+    kind: Literal[
+        "ad_add_to_groups",
+        "ad_remove_from_groups",
+        "ad_enable_account",
+        "ad_disable_account",
+    ]
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
 class WorkflowStepConfig(BaseModel):
     key: str
     type: str  # form, approval
@@ -43,6 +54,7 @@ class WorkflowStepConfig(BaseModel):
     actions: list[str] = []
     partial_save: bool = False
     corrections_target: str | None = None
+    effects: list[StepEffectConfig] = Field(default_factory=list)
 
 
 class WorkflowConfig(BaseModel):
