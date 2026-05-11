@@ -61,42 +61,16 @@ def generate_initial_password(length: int = 16) -> str:
             return pwd
 
 
-# LDAP primitives — imported lazily so tests can monkeypatch them via this module's namespace.
-try:
-    from not_dot_net.backend.auth.ldap import (  # noqa: F401
-        ldap_config as _ldap_cfg_section,
-        ldap_user_exists_by_sam,
-        ldap_create_user,
-        ldap_add_to_groups,
-        NewAdUser,
-        LdapModifyError,
-        get_ldap_connect,
-    )
-except ImportError:  # ldap3 not installed (e.g. in pure-unit-test environments)
-    from dataclasses import dataclass as _dc
-
-    @_dc(frozen=True)
-    class NewAdUser:  # type: ignore[no-redef]
-        sam_account: str = ""
-        given_name: str = ""
-        surname: str = ""
-        display_name: str = ""
-        mail: str = ""
-        description: str | None = None
-        ou_dn: str = ""
-        uid_number: int = 0
-        gid_number: int = 0
-        login_shell: str = ""
-        home_directory: str = ""
-        initial_password: str = ""
-        must_change_password: bool = True
-
-    _ldap_cfg_section = None  # type: ignore[assignment]
-    ldap_user_exists_by_sam = None  # type: ignore[assignment]
-    ldap_create_user = None  # type: ignore[assignment]
-    ldap_add_to_groups = None  # type: ignore[assignment]
-    LdapModifyError = Exception  # type: ignore[assignment,misc]
-    get_ldap_connect = None  # type: ignore[assignment]
+# LDAP primitives — imported directly so tests can monkeypatch them via this module's namespace.
+from not_dot_net.backend.auth.ldap import (  # noqa: F401
+    ldap_config as _ldap_cfg_section,
+    ldap_user_exists_by_sam,
+    ldap_create_user,
+    ldap_add_to_groups,
+    NewAdUser,
+    LdapModifyError,
+    get_ldap_connect,
+)
 
 
 def _safe_upload_path(stored_path: str, root: Path | None = None) -> Path:
@@ -990,10 +964,10 @@ async def _handle_ad_account_creation(
     _ldap_add_groups = _ws.ldap_add_to_groups
     _NewAdUser = _ws.NewAdUser
     _LdapModifyError = _ws.LdapModifyError
-    _connect = _ws.get_ldap_connect() if _ws.get_ldap_connect else None
+    _connect = _ws.get_ldap_connect()
 
     ad_cfg = await ad_account_config.get()
-    ldap_cfg = await _ws._ldap_cfg_section.get() if _ws._ldap_cfg_section else None
+    ldap_cfg = await _ws._ldap_cfg_section.get()
     bind_user, bind_pw = ad_creds
 
     sam = form_data["sam_account"].strip()
@@ -1081,9 +1055,14 @@ async def _handle_ad_account_creation(
     from not_dot_net.backend.notifications import render_email
     contact_email = (request.target_email or "").strip()
     if contact_email:
+        # Look up the workflow label for the email subject.
+        wf_cfg = await workflows_config.get()
+        wf = wf_cfg.workflows.get(request.type)
+        workflow_label = (wf.label if wf else request.type) or "Workflow"
+
         subject, body = render_email(
             "account_created",
-            workflow_label="Onboarding",
+            workflow_label=workflow_label,
             sam=sam, initial_password=initial_password,
             display_name=display_name, mail=new_user.mail,
         )
