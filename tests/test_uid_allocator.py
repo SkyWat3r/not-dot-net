@@ -149,3 +149,16 @@ async def test_seed_from_ad_is_idempotent(monkeypatch):
     second = await seed_from_ad("admin", "secret")
     assert first.seeded == 2 and first.skipped == 0
     assert second.seeded == 0 and second.skipped == 2
+
+
+@pytest.mark.asyncio
+async def test_list_allocations_returns_views_desc_by_acquired():
+    from not_dot_net.backend.uid_allocator import list_allocations
+    uid_user = await _make_user("list@example.com")
+    await allocate_uid(uid_user, "first")
+    await allocate_uid(uid_user, "second")
+    views = await list_allocations(limit=10)
+    assert len(views) >= 2
+    # Most recent first
+    assert views[0].acquired_at >= views[1].acquired_at
+    assert all(hasattr(v, "uid") and hasattr(v, "sam_account") for v in views)

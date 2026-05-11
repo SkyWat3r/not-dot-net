@@ -152,3 +152,18 @@ async def seed_from_ad(bind_username: str, bind_password: str) -> SeedResult:
         detail=f"seeded={seeded} skipped={skipped}",
     )
     return SeedResult(seeded=seeded, skipped=skipped)
+
+
+async def list_allocations(*, limit: int = 200) -> list[UidAllocationView]:
+    """List all UID allocations, most recent first."""
+    async with session_scope() as session:
+        rows = (await session.execute(
+            select(UidAllocation).order_by(UidAllocation.acquired_at.desc()).limit(limit)
+        )).scalars().all()
+    return [
+        UidAllocationView(
+            uid=r.uid, source=r.source, user_id=r.user_id,
+            sam_account=r.sam_account, acquired_at=r.acquired_at, note=r.note,
+        )
+        for r in rows
+    ]
