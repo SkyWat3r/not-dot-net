@@ -272,3 +272,46 @@ async def test_dashboard_config_registered():
     from not_dot_net.backend.app_config import get_registry
     from not_dot_net.config import dashboard_config  # noqa: F401
     assert "dashboard" in get_registry()
+
+
+# --- AdAccountConfig ---
+
+async def test_ad_account_config_defaults():
+    from not_dot_net.backend.ad_account_config import ad_account_config
+    cfg = await ad_account_config.get()
+    assert cfg.uid_min == 10000
+    assert cfg.uid_max == 60000
+    assert cfg.mail_template.endswith("@lpp.polytechnique.fr")
+    assert cfg.eligible_groups == []
+
+
+async def test_ad_account_config_roundtrip():
+    from not_dot_net.backend.ad_account_config import ad_account_config, AdAccountConfig
+    custom = AdAccountConfig(
+        uid_min=20000,
+        uid_max=50000,
+        default_gid_number=20000,
+        default_login_shell="/bin/zsh",
+        home_directory_template="/home/{sam}",
+        mail_template="{first}.{last}@example.fr",
+        users_ous=["CN=Users,DC=example,DC=com"],
+        eligible_groups=["CN=intranet,DC=example,DC=com"],
+        default_groups_by_status={"Intern": ["CN=interns,DC=example,DC=com"]},
+        password_length=20,
+    )
+    await ad_account_config.set(custom)
+    result = await ad_account_config.get()
+    assert result.uid_min == 20000
+    assert result.uid_max == 50000
+    assert result.default_gid_number == 20000
+    assert result.default_login_shell == "/bin/zsh"
+    assert result.users_ous == ["CN=Users,DC=example,DC=com"]
+    assert result.eligible_groups == ["CN=intranet,DC=example,DC=com"]
+    assert result.default_groups_by_status == {"Intern": ["CN=interns,DC=example,DC=com"]}
+    assert result.password_length == 20
+
+
+async def test_ad_account_config_registered():
+    from not_dot_net.backend.app_config import get_registry
+    from not_dot_net.backend.ad_account_config import ad_account_config  # noqa: F401
+    assert "ad_account" in get_registry()

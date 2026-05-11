@@ -10,6 +10,7 @@ from not_dot_net.backend.migrate import run_upgrade
 from not_dot_net.backend.secrets import load_or_create
 from not_dot_net.backend.users import init_user_secrets, ensure_default_admin, set_dev_mode
 import not_dot_net.backend.auth.ldap  # noqa: F401 — register LdapConfig section
+import not_dot_net.backend.ad_account_config  # noqa: F401 — register AdAccountConfig section
 from not_dot_net.frontend.login import setup as setup_login, login_router
 from not_dot_net.frontend.shell import setup as setup_shell
 from not_dot_net.frontend.workflow_token import setup as setup_token
