@@ -135,6 +135,109 @@ async def _render_field(field_cfg, data, fields, files, on_file_upload, max_uplo
         ).props("outlined dense").classes(width_class)
 
 
+async def _render_ad_account_creation_form(step, prefill, on_submit):
+    """Bespoke form for the AD account creation step.
+
+    Prefills: sAM derived from first/last (cascade), mail from template,
+    home dir from template + sam, groups pre-checked by status.
+    """
+    from not_dot_net.backend.ad_account_config import ad_account_config
+    from not_dot_net.backend.workflow_service import (
+        derive_sam_candidates,
+        render_home,
+        render_mail,
+    )
+
+    cfg = await ad_account_config.get()
+
+    first = prefill.get("first_name", "")
+    last = prefill.get("last_name", "")
+    status = prefill.get("status", "")
+
+    state = {
+        "sam_account": (derive_sam_candidates(first, last) or [""])[0],
+        "ou_dn": "",
+        "gid_number": cfg.default_gid_number,
+        "login_shell": cfg.default_login_shell,
+        "home_directory": "",
+        "mail": render_mail(cfg.mail_template, first, last),
+        "description": "",
+        "notes": "",
+        "groups": list(cfg.default_groups_by_status.get(status, [])),
+    }
+    state["home_directory"] = render_home(cfg.home_directory_template, state["sam_account"])
+
+    with ui.column().classes("w-full gap-3"):
+        ui.label(f"{t('first_name')}: {first}").classes("text-sm")
+        ui.label(f"{t('last_name')}: {last}").classes("text-sm")
+
+        sam_input = ui.input(t("samaccountname"), value=state["sam_account"]).props("outlined dense stack-label")
+        home_input = ui.input(t("home_directory"), value=state["home_directory"]).props("outlined dense stack-label")
+
+        def _on_sam_change(e, _home=home_input):
+            state["sam_account"] = (e.value or "").strip()
+            state["home_directory"] = render_home(cfg.home_directory_template, state["sam_account"])
+            _home.set_value(state["home_directory"])
+
+        sam_input.on_value_change(_on_sam_change)
+
+        ui.label(f"{t('uid')}: {t('uid_allocated_at_submit')}").classes("text-sm text-grey")
+
+        gid_input = ui.number(t("primary_gid"), value=state["gid_number"]).props("outlined dense stack-label")
+        gid_input.on_value_change(lambda e: state.update({"gid_number": int(e.value or cfg.default_gid_number)}))
+
+        shell_input = ui.input(t("login_shell"), value=state["login_shell"]).props("outlined dense stack-label")
+        shell_input.on_value_change(lambda e: state.update({"login_shell": e.value or cfg.default_login_shell}))
+
+        home_input.on_value_change(lambda e: state.update({"home_directory": e.value or ""}))
+
+        ou_select = ui.select(
+            options={dn: dn for dn in cfg.users_ous},
+            value=None,
+            label=t("ou"),
+        ).props("outlined dense stack-label")
+        ou_select.on_value_change(lambda e: state.update({"ou_dn": e.value or ""}))
+
+        mail_input = ui.input(t("mail"), value=state["mail"]).props("outlined dense stack-label")
+        mail_input.on_value_change(lambda e: state.update({"mail": e.value or ""}))
+
+        desc_input = ui.textarea(t("description"), value=state["description"]).props("outlined dense stack-label")
+        desc_input.on_value_change(lambda e: state.update({"description": e.value or ""}))
+
+        groups_select = ui.select(
+            options={dn: dn for dn in cfg.eligible_groups},
+            value=state["groups"],
+            multiple=True,
+            label=t("groups"),
+        ).props("outlined dense stack-label use-chips")
+        groups_select.on_value_change(lambda e: state.update({"groups": list(e.value or [])}))
+
+        notes_input = ui.textarea(t("notes"), value=state["notes"]).props("outlined dense stack-label")
+        notes_input.on_value_change(lambda e: state.update({"notes": e.value or ""}))
+
+        async def submit():
+            if not state["ou_dn"]:
+                ui.notify(t("ou_required"), type="warning")
+                return
+            payload = {
+                **prefill,
+                "sam_account": state["sam_account"],
+                "ou_dn": state["ou_dn"],
+                "gid_number": state["gid_number"],
+                "login_shell": state["login_shell"],
+                "home_directory": state["home_directory"],
+                "mail": state["mail"],
+                "description": state["description"],
+                "groups": state["groups"],
+                "notes": state["notes"],
+                "first_name": first,
+                "last_name": last,
+            }
+            await on_submit("complete", payload)
+
+        ui.button(t("complete"), on_click=submit).props("color=primary")
+
+
 async def render_step_form(
     step: WorkflowStepConfig,
     data: dict,
@@ -145,6 +248,9 @@ async def render_step_form(
     max_upload_size_mb: int = 10,
 ):
     """Render a form step's fields. Returns dict of field name -> ui element."""
+    if step.type == "ad_account_creation":
+        return await _render_ad_account_creation_form(step, data, on_submit)
+
     from not_dot_net.config import is_field_visible
 
     fields: dict = {}

@@ -462,10 +462,13 @@ async def submit_step(
     actor_user=None,
     actor_token: str | None = None,
     ad_creds: tuple[str, str] | None = None,
+    _out: list | None = None,
 ) -> WorkflowRequest:
     """Submit an action on the current step.
 
     Exactly one of actor_user or actor_token must be provided for authorization.
+    If _out is provided, any AdAccountCreationResult from an ad_account_creation step
+    is appended to it so the caller can surface the temp password.
     """
     async with session_scope() as session:
         req = await session.get(WorkflowRequest, request_id)
@@ -493,9 +496,11 @@ async def submit_step(
             if not ad_creds:
                 from not_dot_net.backend.workflow_effects import AdCredentialsRequired
                 raise AdCredentialsRequired("ad_account_creation step requires AD admin credentials")
-            await _handle_ad_account_creation(
+            ad_result = await _handle_ad_account_creation(
                 request=req, form_data=data or {}, ad_creds=ad_creds, actor_user=actor_user,
             )
+            if _out is not None:
+                _out.append(ad_result)
 
         # Merge new data
         if data:

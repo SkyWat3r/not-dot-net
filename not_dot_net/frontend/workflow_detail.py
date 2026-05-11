@@ -302,6 +302,37 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
 
             render_approval(req.data, wf, step_config, handle_approve, handle_reject, corrections_fn)
 
+        elif step_config.type == "ad_account_creation":
+            async def handle_ad_submit(action, data):
+                from not_dot_net.frontend.ad_credentials import prompt_ad_credentials
+
+                async def _on_bind(bind_user, bind_pw):
+                    out = []
+                    try:
+                        await submit_step(
+                            req.id, user.id, action, data=data, actor_user=user,
+                            ad_creds=(bind_user, bind_pw), _out=out,
+                        )
+                    except Exception as e:
+                        ui.notify(str(e), color="negative")
+                        return
+                    if out:
+                        ad_res = out[0]
+                        if ad_res.group_failures:
+                            failed = ", ".join(ad_res.group_failures)
+                            ui.notify(t("group_add_failures", groups=failed), type="warning")
+                        _show_temp_password_dialog(
+                            ad_res.initial_password,
+                            on_close=lambda: ui.navigate.to(f"/workflow/request/{request_id_str}"),
+                        )
+                    else:
+                        ui.notify(t("step_submitted"), color="positive")
+                        ui.navigate.to(f"/workflow/request/{request_id_str}")
+
+                await prompt_ad_credentials(user, _on_bind)
+
+            await render_step_form(step_config, req.data, on_submit=handle_ad_submit)
+
         elif step_config.type == "form":
             async def handle_submit(data):
                 try:
@@ -313,6 +344,28 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                 ui.navigate.to(f"/workflow/request/{request_id_str}")
 
             await render_step_form(step_config, req.data, on_submit=handle_submit)
+
+
+def _show_temp_password_dialog(password: str, on_close=None):
+    """Show the generated initial password once. Not stored anywhere in the frontend."""
+    dlg = ui.dialog()
+    with dlg, ui.card():
+        ui.label(t("initial_password_copy_now")).classes("text-bold")
+        ui.label(password).classes("font-mono text-lg p-2 bg-grey-2")
+
+        def _copy():
+            ui.run_javascript(f"navigator.clipboard.writeText({password!r})")
+            ui.notify(t("copied"), type="positive")
+
+        def _close():
+            dlg.close()
+            if on_close:
+                on_close()
+
+        with ui.row():
+            ui.button(t("copy"), on_click=_copy).props("color=primary")
+            ui.button(t("close"), on_click=_close).props("flat")
+    dlg.open()
 
 
 async def _load_files(request_id: uuid.UUID) -> dict[str, list[WorkflowFile]]:
