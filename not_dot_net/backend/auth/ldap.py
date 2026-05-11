@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
-from ldap3 import Server, ServerPool, Connection, ALL, Tls, MODIFY_REPLACE, ROUND_ROBIN
+from ldap3 import Server, ServerPool, Connection, ALL, Tls, MODIFY_REPLACE, MODIFY_ADD, MODIFY_DELETE, ROUND_ROBIN
 from ldap3.core.exceptions import LDAPBindError, LDAPException
 from ldap3.utils.conv import escape_filter_chars
 from pydantic import BaseModel, Field
@@ -804,3 +804,95 @@ def ldap_create_user(
     finally:
         conn.unbind()
     return dn
+
+
+def _modify_group_member(
+    op_kind,  # MODIFY_ADD or MODIFY_DELETE
+    user_dn: str,
+    group_dns: list[str],
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> dict[str, str]:
+    """Internal helper: add or remove user_dn from group 'member' attributes.
+
+    Returns {failed_group_dn: error_message} for any groups that failed.
+    """
+    failures: dict[str, str] = {}
+    if not group_dns:
+        return failures
+    conn = _ldap_bind(bind_username, bind_password, ldap_cfg, connect)
+    try:
+        for gdn in group_dns:
+            ok = conn.modify(gdn, {"member": [(op_kind, [user_dn])]})
+            if not ok:
+                failures[gdn] = (
+                    f"{conn.result.get('description')} ({conn.result.get('message')})"
+                )
+    finally:
+        conn.unbind()
+    return failures
+
+
+def ldap_add_to_groups(
+    user_dn: str,
+    group_dns: list[str],
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> dict[str, str]:
+    """Add user_dn to each group's 'member' attribute. Returns {failed_group_dn: msg}."""
+    return _modify_group_member(MODIFY_ADD, user_dn, group_dns, bind_username, bind_password, ldap_cfg, connect)
+
+
+def ldap_remove_from_groups(
+    user_dn: str,
+    group_dns: list[str],
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> dict[str, str]:
+    """Remove user_dn from each group's 'member' attribute. Returns {failed_group_dn: msg}."""
+    return _modify_group_member(MODIFY_DELETE, user_dn, group_dns, bind_username, bind_password, ldap_cfg, connect)
+
+
+@dataclass(frozen=True)
+class GroupSummary:
+    dn: str
+    cn: str
+    description: str | None
+
+
+def ldap_list_groups(
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    *,
+    base_dn: str | None = None,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> list[GroupSummary]:
+    """Paged search for (objectClass=group). Returns [{dn, cn, description}]."""
+    search_base = base_dn or ldap_cfg.base_dn
+    conn = _ldap_bind(bind_username, bind_password, ldap_cfg, connect)
+    try:
+        ok = conn.search(
+            search_base,
+            "(objectClass=group)",
+            attributes=["cn", "description"],
+            paged_size=500,
+        )
+        if not ok:
+            return []
+        return [
+            GroupSummary(
+                dn=entry.entry_dn,
+                cn=_attr_value(entry, "cn") or entry.entry_dn,
+                description=_attr_value(entry, "description"),
+            )
+            for entry in conn.entries
+        ]
+    finally:
+        conn.unbind()

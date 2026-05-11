@@ -160,3 +160,61 @@ def test_ldap_create_user_no_force_change_skips_pwdlastset():
     ops = [c[0] for c in conn.calls]
     # add → unicodePwd modify → UAC enable (no pwdLastSet)
     assert ops == ["add", "modify", "modify"]
+
+
+def test_ldap_add_to_groups_calls_modify_per_group():
+    from not_dot_net.backend.auth.ldap import ldap_add_to_groups, LdapConfig
+    conn = _FakeConn()
+    cfg = LdapConfig(base_dn="DC=x")
+    failures = ldap_add_to_groups(
+        "CN=alice,DC=x",
+        ["CN=g1,DC=x", "CN=g2,DC=x"],
+        "admin", "pw", cfg, _fake_connect_returning(conn),
+    )
+    assert failures == {}
+    assert [c[0] for c in conn.calls] == ["modify", "modify"]
+    # Each modify uses MODIFY_ADD on member with the user DN
+    for op, (gdn, changes) in conn.calls:
+        assert "member" in changes
+        action, value = changes["member"][0]
+        assert action == MODIFY_ADD
+        assert value == ["CN=alice,DC=x"]
+
+
+def test_ldap_add_to_groups_collects_per_group_failures():
+    from not_dot_net.backend.auth.ldap import ldap_add_to_groups, LdapConfig
+    conn = _FakeConn(modify_ok=False)
+    cfg = LdapConfig(base_dn="DC=x")
+    failures = ldap_add_to_groups(
+        "CN=alice,DC=x",
+        ["CN=g1,DC=x"],
+        "admin", "pw", cfg, _fake_connect_returning(conn),
+    )
+    assert "CN=g1,DC=x" in failures
+    assert "constraintViolation" in failures["CN=g1,DC=x"] or "nope" in failures["CN=g1,DC=x"]
+
+
+def test_ldap_remove_from_groups_uses_modify_delete():
+    from not_dot_net.backend.auth.ldap import ldap_remove_from_groups, LdapConfig
+    conn = _FakeConn()
+    cfg = LdapConfig(base_dn="DC=x")
+    ldap_remove_from_groups(
+        "CN=alice,DC=x", ["CN=g1,DC=x"], "admin", "pw", cfg, _fake_connect_returning(conn),
+    )
+    op, (gdn, changes) = conn.calls[0]
+    action, value = changes["member"][0]
+    assert action == MODIFY_DELETE
+
+
+def test_ldap_list_groups_returns_summaries():
+    from not_dot_net.backend.auth.ldap import ldap_list_groups, LdapConfig
+    entries = [
+        _FakeEntry({"cn": "g1", "description": "team", "_dn": "CN=g1,OU=Groups,DC=x"}),
+        _FakeEntry({"cn": "g2", "description": None, "_dn": "CN=g2,OU=Groups,DC=x"}),
+    ]
+    conn = _FakeConn(search_returns_entries=entries)
+    cfg = LdapConfig(base_dn="DC=x,DC=y")
+    groups = ldap_list_groups("admin", "pw", cfg, connect=_fake_connect_returning(conn))
+    assert len(groups) == 2
+    dns = {g.dn for g in groups}
+    assert dns == {"CN=g1,OU=Groups,DC=x", "CN=g2,OU=Groups,DC=x"}
