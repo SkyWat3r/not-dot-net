@@ -24,8 +24,7 @@ class UidAllocation(MappedAsDataclass, Base, kw_only=True):
     )
     sam_account: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     acquired_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
-        default_factory=lambda: datetime.now(timezone.utc),
+        DateTime(timezone=True), nullable=False, server_default=func.now(), default=None,
     )
     note: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
 
