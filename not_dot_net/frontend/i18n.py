@@ -385,6 +385,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "warning_effect_unknown_action": "[{step}] effect references unknown action '{action}'",
         "warning_effect_groups_not_eligible": "[{step}] effect references groups not in eligible_groups: {groups}",
         "effects": "Effects",
+        # AD Accounts settings page
+        "ad_accounts": "AD Accounts",
+        "lock_existing_ad_uids_intro": "Import UIDs already assigned in Active Directory so the allocator never reuses them.",
+        "lock_existing_ad_uids": "Lock existing AD UIDs",
+        "lock_existing_ad_uids_result": "Locked: {seeded} new entries, {skipped} already known.",
+        "recent_uid_allocations": "Recent UID allocations",
+        "uid_allocations_empty": "No UID allocations yet.",
+        "samaccountname": "sAMAccountName",
+        "source": "Source",
+        "acquired_at": "Acquired at",
     },
     "fr": {
         # Shell / nav
@@ -766,6 +776,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "warning_effect_unknown_action": "[{step}] l'effet référence une action inconnue '{action}'",
         "warning_effect_groups_not_eligible": "[{step}] l'effet référence des groupes absents de eligible_groups : {groups}",
         "effects": "Effets",
+        # AD Accounts settings page
+        "ad_accounts": "Comptes AD",
+        "lock_existing_ad_uids_intro": "Importer les UID déjà attribués dans l'Active Directory afin que l'allocateur ne les réutilise jamais.",
+        "lock_existing_ad_uids": "Verrouiller les UID AD existants",
+        "lock_existing_ad_uids_result": "Verrouillés : {seeded} nouveaux, {skipped} déjà connus.",
+        "recent_uid_allocations": "Allocations UID récentes",
+        "uid_allocations_empty": "Aucune allocation UID pour l'instant.",
+        "samaccountname": "sAMAccountName",
+        "source": "Source",
+        "acquired_at": "Acquis le",
     },
 }
 

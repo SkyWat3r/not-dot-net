@@ -10,6 +10,7 @@ from not_dot_net.backend.db import User
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.users import current_active_user_optional
 from not_dot_net.frontend.admin_settings import render as render_settings
+from not_dot_net.frontend.admin_ad_account import render as render_ad_accounts
 from not_dot_net.frontend.audit_log import render as render_audit
 from not_dot_net.frontend.bookings import render as render_bookings
 from not_dot_net.frontend.pages import render as render_pages
@@ -50,6 +51,7 @@ def setup():
         pages_label = t("pages")
         audit_label = t("audit_log")
         settings_label = t("settings")
+        ad_accounts_label = t("ad_accounts")
         users_label = t("user_management")
 
         can_create = await has_permissions(effective_user, "create_workflows") if logged_in else False
@@ -62,6 +64,7 @@ def setup():
         if is_admin:
             available_tabs.append(audit_label)
             available_tabs.append(settings_label)
+            available_tabs.append(ad_accounts_label)
         if is_superuser:
             available_tabs.append(users_label)
         saved_tab = app.storage.user.get("active_tab")
@@ -82,6 +85,7 @@ def setup():
                 if is_admin:
                     ui.tab(audit_label, icon="policy")
                     ui.tab(settings_label, icon="settings")
+                    ui.tab(ad_accounts_label, icon="manage_accounts")
                 if is_superuser:
                     ui.tab(users_label, icon="manage_accounts")
 
@@ -126,6 +130,8 @@ def setup():
                     render_audit()
                 with ui.tab_panel(settings_label):
                     await render_settings(effective_user)
+                with ui.tab_panel(ad_accounts_label):
+                    await render_ad_accounts(effective_user)
             if is_superuser:
                 with ui.tab_panel(users_label):
                     await render_user_management(effective_user)
