@@ -487,6 +487,26 @@ def ldap_set_account_enabled(
         conn.unbind()
 
 
+def ldap_user_exists_by_sam(
+    sam: str,
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> bool:
+    """Return True if a user with this sAMAccountName exists in AD."""
+    conn = _ldap_bind(bind_username, bind_password, ldap_cfg, connect)
+    try:
+        ok = conn.search(
+            ldap_cfg.base_dn,
+            f"(sAMAccountName={sam})",
+            attributes=["sAMAccountName"],
+        )
+        return bool(ok and conn.entries)
+    finally:
+        conn.unbind()
+
+
 def ldap_modify_user(
     dn: str,
     changes: dict[str, str | None],
