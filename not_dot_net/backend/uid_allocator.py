@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, ForeignKey, select, func
 from sqlalchemy.orm import Mapped, mapped_column, MappedAsDataclass
 
-from not_dot_net.backend.db import Base
+from not_dot_net.backend.db import Base, session_scope
 
 
 class UidRangeExhausted(Exception):
@@ -37,3 +37,45 @@ class UidAllocationView:
     sam_account: str | None
     acquired_at: datetime
     note: str | None
+
+
+async def allocate_uid(user_id: uuid.UUID, sam_account: str) -> int:
+    """Allocate the smallest free UID in the configured [uid_min, uid_max] range.
+
+    Inserts a row marking the UID consumed; raises UidRangeExhausted if no free slot.
+    Audit-logs the allocation with category='ad' action='allocate_uid'.
+    """
+    from not_dot_net.backend.ad_account_config import ad_account_config
+    from not_dot_net.backend.audit import log_audit
+
+    cfg = await ad_account_config.get()
+    lo, hi = cfg.uid_min, cfg.uid_max
+
+    async with session_scope() as session:
+        rows = (await session.execute(
+            select(UidAllocation.uid).where(
+                UidAllocation.uid >= lo, UidAllocation.uid <= hi,
+            ).order_by(UidAllocation.uid.asc())
+        )).scalars().all()
+
+        used = set(rows)
+        chosen: int | None = None
+        for n in range(lo, hi + 1):
+            if n not in used:
+                chosen = n
+                break
+        if chosen is None:
+            raise UidRangeExhausted(f"No free UID in [{lo}, {hi}]")
+
+        session.add(UidAllocation(
+            uid=chosen, source="allocated",
+            user_id=user_id, sam_account=sam_account,
+        ))
+        await session.commit()
+
+    await log_audit(
+        category="ad", action="allocate_uid",
+        actor_id=None, target_id=str(user_id),
+        detail=f'{{"uid": {chosen}, "sam": "{sam_account}"}}',
+    )
+    return chosen
