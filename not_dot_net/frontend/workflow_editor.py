@@ -13,7 +13,7 @@ from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.permissions import get_permissions
 from not_dot_net.backend.roles import roles_config
 from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
-from not_dot_net.config import FieldConfig, NotificationRuleConfig, OrgConfig, WorkflowConfig, WorkflowStepConfig
+from not_dot_net.config import FieldConfig, NotificationRuleConfig, OrgConfig, StepEffectConfig, WorkflowConfig, WorkflowStepConfig
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_editor_options import (
     assignee_options,
@@ -73,6 +73,7 @@ class WorkflowEditorDialog:
         self._current_warnings: list[str] = []
         self._roles: dict = {}
         self._permissions: dict = {}
+        self._eligible_groups_snapshot: dict[str, str] = {}
         self._unlocked_fields: set[tuple[str, str, str]] = set()
         self._save_dirty_badge = None
 
@@ -83,6 +84,9 @@ class WorkflowEditorDialog:
         roles_cfg = await roles_config.get()
         instance._roles = dict(roles_cfg.roles)
         instance._permissions = dict(get_permissions())
+        from not_dot_net.backend.ad_account_config import ad_account_config
+        cfg = await ad_account_config.get()
+        instance._eligible_groups_snapshot = {dn: dn for dn in cfg.eligible_groups}
         instance._build()
         return instance
 
@@ -489,6 +493,91 @@ class WorkflowEditorDialog:
                   on_click=lambda k=wf_key: self.add_notification_rule(k)
                   ).props("flat dense color=primary")
 
+    def _render_effects_table(self, wf_key: str, step) -> None:
+        from not_dot_net.frontend.widgets import chip_list_editor
+        from not_dot_net.frontend.workflow_editor_options import effect_kind_options
+
+        kind_opts = {o["value"]: o["label"] for o in effect_kind_options()}
+        action_opts = {a: a for a in (step.actions or [])}
+
+        if not step.effects:
+            ui.label(t("empty_effects")).classes("text-grey text-sm")
+
+        for idx, effect in enumerate(step.effects):
+            with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                ui.select(
+                    options=action_opts, value=effect.on_action, label=t("on_action"),
+                    on_change=lambda e, i=idx, k=wf_key, sk=step.key:
+                        self.set_effect_field(k, sk, i, "on_action", e.value or ""),
+                ).props("dense outlined stack-label").classes("w-32")
+
+                ui.select(
+                    options=kind_opts, value=effect.kind, label=t("kind"),
+                    on_change=lambda e, i=idx, k=wf_key, sk=step.key:
+                        self.set_effect_field(k, sk, i, "kind", e.value or ""),
+                ).props("dense outlined stack-label").classes("w-56")
+
+                if effect.kind in ("ad_add_to_groups", "ad_remove_from_groups"):
+                    eligible = self._eligible_groups_snapshot
+                    groups_select = chip_list_editor(
+                        list(effect.params.get("groups", [])),
+                        label=t("groups"),
+                        suggestions=list(eligible.keys()),
+                    )
+                    groups_select.on_value_change(
+                        lambda e, i=idx, k=wf_key, sk=step.key:
+                            self.set_effect_param(k, sk, i, "groups", list(e.value or []))
+                    )
+                else:
+                    ui.label("—").classes("text-grey")
+
+                ui.button(
+                    icon="delete",
+                    on_click=lambda i=idx, k=wf_key, sk=step.key: self.delete_effect(k, sk, i),
+                ).props("flat dense round color=negative")
+
+        ui.button(
+            f"+ {t('add_effect')}",
+            on_click=lambda k=wf_key, sk=step.key: self.add_effect(k, sk),
+        ).props("flat dense color=primary")
+
+    # --- effect mutations ---
+
+    def _on_step_type_change(self, wf_key: str, step_key: str, value: str) -> None:
+        self.set_step_field(wf_key, step_key, "type", value)
+        if value == "ad_account_creation":
+            step = self._find_step(wf_key, step_key)
+            if step.actions != ["complete"]:
+                step.actions = ["complete"]
+        self._refresh_detail()
+
+    def add_effect(self, wf_key: str, step_key: str) -> None:
+        step = self._find_step(wf_key, step_key)
+        default_action = (step.actions or ["submit"])[0] or "submit"
+        step.effects = list(step.effects or []) + [
+            StepEffectConfig(on_action=default_action, kind="ad_add_to_groups", params={"groups": []})
+        ]
+        self._refresh_detail()
+
+    def delete_effect(self, wf_key: str, step_key: str, idx: int) -> None:
+        step = self._find_step(wf_key, step_key)
+        effs = list(step.effects or [])
+        if 0 <= idx < len(effs):
+            effs.pop(idx)
+            step.effects = effs
+        self._refresh_detail()
+
+    def set_effect_field(self, wf_key: str, step_key: str, idx: int, field: str, value) -> None:
+        step = self._find_step(wf_key, step_key)
+        setattr(step.effects[idx], field, value)
+        self._refresh_detail()
+
+    def set_effect_param(self, wf_key: str, step_key: str, idx: int, key: str, value) -> None:
+        step = self._find_step(wf_key, step_key)
+        params = dict(step.effects[idx].params or {})
+        params[key] = value
+        step.effects[idx].params = params
+
     def _render_step_editor(self, wf_key: str, step) -> None:
         from not_dot_net.frontend.widgets import chip_list_editor
 
@@ -498,10 +587,15 @@ class WorkflowEditorDialog:
                  on_change=lambda e, w=wf_key, k=step.key: self._safe_set(w, k, "key", e.value)
                  ).classes("w-full").props("dense outlined stack-label")
 
-        ui.select({"form": t("step_type_form"), "approval": t("step_type_approval")},
-                  value=step.type, label="Type",
-                  on_change=lambda e, w=wf_key, k=step.key: self.set_step_field(w, k, "type", e.value)
-                  ).classes("w-full").props("dense outlined stack-label")
+        ui.select(
+            {
+                "form": t("step_type_form"),
+                "approval": t("step_type_approval"),
+                "ad_account_creation": t("step_type_ad_account_creation"),
+            },
+            value=step.type, label="Type",
+            on_change=lambda e, w=wf_key, k=step.key: self._on_step_type_change(w, k, e.value),
+        ).classes("w-full").props("dense outlined stack-label")
 
         ui.label(t("step_assignee")).classes("text-subtitle2 q-mt-sm")
         opts = assignee_options(self._roles, self._permissions)
@@ -579,39 +673,48 @@ class WorkflowEditorDialog:
                       on_change=lambda e, w=wf_key, k=step.key: self.set_step_field(w, k, "corrections_target", e.value)
                       ).classes("w-full").props("dense outlined stack-label")
 
+        # --- Effects panel ---
+        n_eff = len(step.effects or [])
+        with ui.expansion(f"{t('step_section_effects')}  ({n_eff})", icon="bolt").classes("w-full"):
+            self._render_effects_table(wf_key, step)
+
+        # --- Fields panel (hidden for ad_account_creation) ---
         ui.label("Fields").classes("text-subtitle2 q-mt-md")
-        if not step.fields:
-            ui.label(t("empty_fields")).classes("text-grey text-sm")
+        if step.type == "ad_account_creation":
+            ui.label(t("ad_account_creation_fields_locked")).classes("text-grey italic")
+        else:
+            if not step.fields:
+                ui.label(t("empty_fields")).classes("text-grey text-sm")
 
-        org_keys = [None, *_org_list_field_names()]
-        for idx, field in enumerate(step.fields):
-            with ui.column().classes("w-full"):
-                with ui.row().classes("w-full items-center gap-2 no-wrap"):
-                    ui.input(t("field_display_name"), value=field.label,
-                             on_change=lambda e, i=idx, w=wf_key, sk=step.key:
-                                 self.set_field_label_with_autoslug(w, sk, i, e.value)
-                             ).props("dense outlined stack-label").classes("grow")
-                    ui.select(["text", "email", "phone", "textarea", "date", "select", "file", "location", "checkbox"],
-                              value=field.type, label="type",
-                              on_change=lambda e, i=idx, w=wf_key, sk=step.key:
-                                  self.set_field_attr(w, sk, i, "type", e.value)
-                              ).props("dense outlined stack-label").classes("w-32")
-                    ui.switch("Required", value=field.required,
-                              on_change=lambda e, i=idx, w=wf_key, sk=step.key:
-                                  self.set_field_attr(w, sk, i, "required", e.value))
-                    ui.switch(t("field_half_width"), value=field.half_width,
-                              on_change=lambda e, i=idx, w=wf_key, sk=step.key:
-                                  self.set_field_attr(w, sk, i, "half_width", e.value))
-                    with ui.expansion(t("field_more"), icon="more_vert").classes("grow-0"):
-                        self._render_field_more(wf_key, step.key, idx, field, org_keys)
-                    ui.button(icon="delete",
-                              on_click=lambda i=idx, w=wf_key, sk=step.key:
-                                  self.delete_field(w, sk, i)
-                              ).props("flat dense round color=negative")
+            org_keys = [None, *_org_list_field_names()]
+            for idx, field in enumerate(step.fields):
+                with ui.column().classes("w-full"):
+                    with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                        ui.input(t("field_display_name"), value=field.label,
+                                 on_change=lambda e, i=idx, w=wf_key, sk=step.key:
+                                     self.set_field_label_with_autoslug(w, sk, i, e.value)
+                                 ).props("dense outlined stack-label").classes("grow")
+                        ui.select(["text", "email", "phone", "textarea", "date", "select", "file", "location", "checkbox"],
+                                  value=field.type, label="type",
+                                  on_change=lambda e, i=idx, w=wf_key, sk=step.key:
+                                      self.set_field_attr(w, sk, i, "type", e.value)
+                                  ).props("dense outlined stack-label").classes("w-32")
+                        ui.switch("Required", value=field.required,
+                                  on_change=lambda e, i=idx, w=wf_key, sk=step.key:
+                                      self.set_field_attr(w, sk, i, "required", e.value))
+                        ui.switch(t("field_half_width"), value=field.half_width,
+                                  on_change=lambda e, i=idx, w=wf_key, sk=step.key:
+                                      self.set_field_attr(w, sk, i, "half_width", e.value))
+                        with ui.expansion(t("field_more"), icon="more_vert").classes("grow-0"):
+                            self._render_field_more(wf_key, step.key, idx, field, org_keys)
+                        ui.button(icon="delete",
+                                  on_click=lambda i=idx, w=wf_key, sk=step.key:
+                                      self.delete_field(w, sk, i)
+                                  ).props("flat dense round color=negative")
 
-        ui.button("+ Add field",
-                  on_click=lambda w=wf_key, sk=step.key: self.add_field(w, sk)
-                  ).props("flat dense color=primary")
+            ui.button("+ Add field",
+                      on_click=lambda w=wf_key, sk=step.key: self.add_field(w, sk)
+                      ).props("flat dense color=primary")
 
     def _render_field_more(self, wf_key: str, step_key: str, idx: int, field, org_keys) -> None:
         locked = self._is_field_name_locked(wf_key, step_key, field.name)
@@ -811,6 +914,20 @@ class WorkflowEditorDialog:
                         f"[{wf_key}] duplicate document_instructions key '{k}' — one entry will be lost on save"
                     )
                 di_seen.add(k)
+            for step in wf.steps:
+                valid_actions = set(step.actions or [])
+                for eff in (step.effects or []):
+                    if eff.on_action not in valid_actions:
+                        warnings.append(
+                            f"[{wf_key}/{step.key}] effect references unknown action '{eff.on_action}'"
+                        )
+                    if eff.kind in ("ad_add_to_groups", "ad_remove_from_groups"):
+                        groups = eff.params.get("groups") or []
+                        bad = [g for g in groups if g not in self._eligible_groups_snapshot]
+                        if bad:
+                            warnings.append(
+                                f"[{wf_key}/{step.key}] effect references groups not in eligible_groups: {', '.join(bad)}"
+                            )
         return warnings
 
     def _show_warnings(self, warnings: list[str]) -> None:

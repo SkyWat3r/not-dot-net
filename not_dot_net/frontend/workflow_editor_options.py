@@ -83,6 +83,17 @@ def event_options() -> list[dict]:
     ]
 
 
+def effect_kind_options() -> list[dict]:
+    """Labeled options for the four AD effect kinds."""
+    from not_dot_net.frontend.i18n import t
+    return [
+        {"value": "ad_add_to_groups", "label": t("effect_kind_ad_add_to_groups")},
+        {"value": "ad_remove_from_groups", "label": t("effect_kind_ad_remove_from_groups")},
+        {"value": "ad_enable_account", "label": t("effect_kind_ad_enable_account")},
+        {"value": "ad_disable_account", "label": t("effect_kind_ad_disable_account")},
+    ]
+
+
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
 

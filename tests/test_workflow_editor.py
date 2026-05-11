@@ -1195,3 +1195,40 @@ async def test_visible_when_picker_does_not_rebuild_detail_pane(user: User, admi
     dlg._apply_visible_when("demo", "s1", 1, None, True)
     assert refresh_count["n"] == 0
     assert dlg.working_copy.workflows["demo"].steps[0].fields[1].visible_when is None
+
+
+def test_compute_warnings_flags_effect_unknown_action():
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    from not_dot_net.config import WorkflowConfig, WorkflowStepConfig, StepEffectConfig
+    from not_dot_net.backend.workflow_service import WorkflowsConfig
+
+    step = WorkflowStepConfig(key="s", type="approval", actions=["approve"], effects=[
+        StepEffectConfig(on_action="nonexistent", kind="ad_enable_account", params={}),
+    ])
+    wf = WorkflowConfig(label="x", steps=[step], notifications=[])
+    dlg = WorkflowEditorDialog.__new__(WorkflowEditorDialog)
+    dlg.working_copy = WorkflowsConfig(workflows={"w": wf})
+    dlg._eligible_groups_snapshot = {}
+    dlg._roles = {}
+    dlg._permissions = {}
+    warns = dlg.compute_warnings()
+    assert any("nonexistent" in w for w in warns)
+
+
+def test_compute_warnings_flags_effect_groups_not_eligible():
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    from not_dot_net.config import WorkflowConfig, WorkflowStepConfig, StepEffectConfig
+    from not_dot_net.backend.workflow_service import WorkflowsConfig
+
+    step = WorkflowStepConfig(key="s", type="approval", actions=["approve"], effects=[
+        StepEffectConfig(on_action="approve", kind="ad_add_to_groups",
+                         params={"groups": ["CN=rogue,DC=x"]}),
+    ])
+    wf = WorkflowConfig(label="x", steps=[step], notifications=[])
+    dlg = WorkflowEditorDialog.__new__(WorkflowEditorDialog)
+    dlg.working_copy = WorkflowsConfig(workflows={"w": wf})
+    dlg._eligible_groups_snapshot = {"CN=ok,DC=x": "ok"}
+    dlg._roles = {}
+    dlg._permissions = {}
+    warns = dlg.compute_warnings()
+    assert any("rogue" in w for w in warns)
