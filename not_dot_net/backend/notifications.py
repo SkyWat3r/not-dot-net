@@ -47,6 +47,19 @@ TEMPLATES = {
         "body": "<p>Your <strong>{workflow_label}</strong> onboarding is now complete. "
                 "Your account has been created.</p>",
     },
+    "account_created": {
+        "subject": "{workflow_label}: your AD account is ready",
+        "body": (
+            "<p>Hello {display_name},</p>"
+            "<p>Your account has been created. You can now log in with:</p>"
+            "<ul>"
+            "<li><strong>Login:</strong> {sam}</li>"
+            "<li><strong>Initial password:</strong> {initial_password}</li>"
+            "<li><strong>Email:</strong> {mail}</li>"
+            "</ul>"
+            "<p>You will be asked to change this password on first login.</p>"
+        ),
+    },
 }
 
 

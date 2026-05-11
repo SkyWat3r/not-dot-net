@@ -1,11 +1,102 @@
 """Workflow service layer — DB operations that use the step machine engine."""
 
 import logging
+import re
+import secrets
+import string
+import unicodedata
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 UPLOAD_ROOT = Path("data/uploads")
+
+
+# --- AD account creation helpers ---
+
+def _normalize_name(s: str) -> str:
+    """Lowercase + accent-strip + drop non-alphanumeric."""
+    if not s:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", s)
+    no_accent = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]", "", no_accent.lower())
+
+
+def derive_sam_candidates(first_name: str, last_name: str, max_steps: int = 5) -> list[str]:
+    """Return sAM candidates in cascading order: {last}, {last}{first[0]}, {last}{first[:2]}, ..."""
+    last = _normalize_name(last_name)
+    first = _normalize_name(first_name)
+    candidates = [last]
+    for i in range(1, min(len(first), max_steps) + 1):
+        candidates.append(f"{last}{first[:i]}")
+    seen: set[str] = set()
+    out: list[str] = []
+    for c in candidates:
+        if c and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def render_mail(template: str, first_name: str, last_name: str) -> str:
+    return template.format(first=_normalize_name(first_name), last=_normalize_name(last_name))
+
+
+def render_home(template: str, sam: str) -> str:
+    return template.format(sam=sam)
+
+
+def generate_initial_password(length: int = 16) -> str:
+    """Strong password with at least one upper, lower, digit, symbol — passes AD complexity."""
+    alpha = string.ascii_letters
+    digits = string.digits
+    symbols = "!@#$%^&*-_=+"
+    pool = alpha + digits + symbols
+    while True:
+        pwd = "".join(secrets.choice(pool) for _ in range(length))
+        if (any(c.islower() for c in pwd) and any(c.isupper() for c in pwd)
+                and any(c.isdigit() for c in pwd) and any(c in symbols for c in pwd)):
+            return pwd
+
+
+# LDAP primitives — imported lazily so tests can monkeypatch them via this module's namespace.
+try:
+    from not_dot_net.backend.auth.ldap import (  # noqa: F401
+        ldap_config as _ldap_cfg_section,
+        ldap_user_exists_by_sam,
+        ldap_create_user,
+        ldap_add_to_groups,
+        NewAdUser,
+        LdapModifyError,
+        get_ldap_connect,
+    )
+except ImportError:  # ldap3 not installed (e.g. in pure-unit-test environments)
+    from dataclasses import dataclass as _dc
+
+    @_dc(frozen=True)
+    class NewAdUser:  # type: ignore[no-redef]
+        sam_account: str = ""
+        given_name: str = ""
+        surname: str = ""
+        display_name: str = ""
+        mail: str = ""
+        description: str | None = None
+        ou_dn: str = ""
+        uid_number: int = 0
+        gid_number: int = 0
+        login_shell: str = ""
+        home_directory: str = ""
+        initial_password: str = ""
+        must_change_password: bool = True
+
+    _ldap_cfg_section = None  # type: ignore[assignment]
+    ldap_user_exists_by_sam = None  # type: ignore[assignment]
+    ldap_create_user = None  # type: ignore[assignment]
+    ldap_add_to_groups = None  # type: ignore[assignment]
+    LdapModifyError = Exception  # type: ignore[assignment,misc]
+    get_ldap_connect = None  # type: ignore[assignment]
 
 
 def _safe_upload_path(stored_path: str, root: Path | None = None) -> Path:
@@ -422,6 +513,15 @@ async def submit_step(
 
         next_step, new_status = compute_next_step(wf, req.current_step, action)
         step_cfg = get_current_step_config(req, wf)
+
+        # Handle ad_account_creation step type before the standard transition
+        if getattr(step_cfg, "type", None) == "ad_account_creation" and action == "complete":
+            if not ad_creds:
+                from not_dot_net.backend.workflow_effects import AdCredentialsRequired
+                raise AdCredentialsRequired("ad_account_creation step requires AD admin credentials")
+            await _handle_ad_account_creation(
+                request=req, form_data=data or {}, ad_creds=ad_creds, actor_user=actor_user,
+            )
 
         # Merge new data
         if data:
@@ -855,3 +955,141 @@ async def can_view_request(user, req: WorkflowRequest) -> bool:
     if wf and await can_user_act(user, req, wf):
         return True
     return False
+
+
+@dataclass(frozen=True)
+class AdAccountCreationResult:
+    request_id: uuid.UUID
+    new_dn: str
+    sam_account: str
+    uid: int
+    initial_password: str
+    group_failures: dict[str, str]
+
+
+async def _handle_ad_account_creation(
+    request,
+    form_data: dict,
+    ad_creds: tuple[str, str],
+    actor_user,
+) -> AdAccountCreationResult:
+    """Allocate UID → create AD user → write back → apply groups.
+
+    Raises on AD create failure (step stays pending). Group-add failures are returned, not raised.
+    """
+    import not_dot_net.backend.workflow_service as _ws
+    from not_dot_net.backend.uid_allocator import allocate_uid
+    from not_dot_net.backend.ad_account_config import ad_account_config
+    from not_dot_net.backend.db import session_scope, User
+    from not_dot_net.backend.audit import log_audit
+    from sqlalchemy import func, select
+
+    # Use module-level names so tests can monkeypatch them.
+    _ldap_user_exists = _ws.ldap_user_exists_by_sam
+    _ldap_create = _ws.ldap_create_user
+    _ldap_add_groups = _ws.ldap_add_to_groups
+    _NewAdUser = _ws.NewAdUser
+    _LdapModifyError = _ws.LdapModifyError
+    _connect = _ws.get_ldap_connect() if _ws.get_ldap_connect else None
+
+    ad_cfg = await ad_account_config.get()
+    ldap_cfg = await _ws._ldap_cfg_section.get() if _ws._ldap_cfg_section else None
+    bind_user, bind_pw = ad_creds
+
+    sam = form_data["sam_account"].strip()
+    if _ldap_user_exists(sam, bind_user, bind_pw, ldap_cfg, _connect):
+        raise ValueError(f"sAMAccountName already exists in AD: {sam}")
+
+    ou_dn = form_data["ou_dn"]
+    if ou_dn not in ad_cfg.users_ous:
+        raise ValueError(f"OU not in eligible list: {ou_dn}")
+
+    chosen_groups = list(form_data.get("groups") or [])
+    bad_groups = [g for g in chosen_groups if g not in ad_cfg.eligible_groups]
+    if bad_groups:
+        raise ValueError(f"groups not in eligible_groups: {bad_groups}")
+
+    async with session_scope() as session:
+        target = (await session.execute(
+            select(User).where(func.lower(User.email) == (request.target_email or "").lower())
+        )).scalar_one_or_none()
+    if not target:
+        raise ValueError(f"No local User for target_email={request.target_email!r}")
+
+    uid = await allocate_uid(target.id, sam)
+
+    first = form_data["first_name"]
+    last = form_data["last_name"]
+    display_name = form_data.get("display_name") or f"{first} {last}"
+    initial_password = generate_initial_password(ad_cfg.password_length)
+
+    new_user = _NewAdUser(
+        sam_account=sam,
+        given_name=first,
+        surname=last,
+        display_name=display_name,
+        mail=form_data["mail"],
+        description=form_data.get("description"),
+        ou_dn=ou_dn,
+        uid_number=uid,
+        gid_number=int(form_data.get("gid_number") or ad_cfg.default_gid_number),
+        login_shell=form_data.get("login_shell") or ad_cfg.default_login_shell,
+        home_directory=form_data["home_directory"],
+        initial_password=initial_password,
+        must_change_password=True,
+    )
+    try:
+        new_dn = _ldap_create(new_user, bind_user, bind_pw, ldap_cfg, _connect)
+    except _LdapModifyError as e:
+        await log_audit(
+            category="ad", action="create_user",
+            actor_id=str(actor_user.id) if actor_user else None,
+            target_id=str(target.id),
+            detail=f"sam={sam} uid={uid} error={e} succeeded=False",
+        )
+        raise
+
+    async with session_scope() as session:
+        u = await session.get(User, target.id)
+        if u is not None:
+            u.ldap_dn = new_dn
+            u.ldap_username = sam
+            u.uid_number = uid
+            u.gid_number = new_user.gid_number
+            u.description = new_user.description
+            u.is_active = True
+            await session.commit()
+
+    await log_audit(
+        category="ad", action="create_user",
+        actor_id=str(actor_user.id) if actor_user else None,
+        target_id=str(target.id),
+        detail=f"sam={sam} uid={uid} dn={new_dn} ou={ou_dn} succeeded=True",
+    )
+
+    group_failures: dict[str, str] = {}
+    if chosen_groups:
+        group_failures = _ldap_add_groups(new_dn, chosen_groups, bind_user, bind_pw, ldap_cfg, _connect)
+        await log_audit(
+            category="ad", action="add_to_groups",
+            actor_id=str(actor_user.id) if actor_user else None,
+            target_id=str(target.id),
+            detail=f"groups={chosen_groups} failures={group_failures}",
+        )
+
+    from not_dot_net.backend.mail import send_mail
+    from not_dot_net.backend.notifications import render_email
+    contact_email = (request.target_email or "").strip()
+    if contact_email:
+        subject, body = render_email(
+            "account_created",
+            workflow_label="Onboarding",
+            sam=sam, initial_password=initial_password,
+            display_name=display_name, mail=new_user.mail,
+        )
+        await send_mail(contact_email, subject, body)
+
+    return AdAccountCreationResult(
+        request_id=request.id, new_dn=new_dn, sam_account=sam,
+        uid=uid, initial_password=initial_password, group_failures=group_failures,
+    )
