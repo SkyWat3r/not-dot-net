@@ -18,6 +18,7 @@ from fastapi_users.db import SQLAlchemyUserDatabase
 from not_dot_net.backend.audit import (
     log_audit,
     log_request_network_debug,
+    request_network_metadata,
     request_ip,
     request_user_agent,
 )
@@ -64,12 +65,24 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
     async def on_after_login(self, user: User, request: Request | None = None, response=None):
         log_request_network_debug(request, context="login_success")
-        if not user.is_superuser:
-            await log_audit("auth", "login", actor_id=user.id, actor_email=user.email)
-            return
-
         ip = request_ip(request)
         user_agent = request_user_agent(request)
+        network = request_network_metadata(request)
+        if not user.is_superuser:
+            await log_audit(
+                "auth", "login",
+                actor_id=user.id,
+                actor_email=user.email,
+                metadata={
+                    "ip": ip,
+                    "user_agent": user_agent,
+                    "network": network,
+                    "is_superuser": False,
+                    "success": True,
+                },
+            )
+            return
+
         await log_audit(
             "auth", "login",
             actor_id=user.id,
@@ -78,6 +91,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             metadata={
                 "ip": ip,
                 "user_agent": user_agent,
+                "network": network,
                 "role": user.role,
                 "is_superuser": True,
                 "success": True,

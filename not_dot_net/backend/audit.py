@@ -67,22 +67,38 @@ def request_user_agent(request) -> str | None:
     return request.headers.get("user-agent")
 
 
+def request_network_metadata(request) -> dict[str, str | None]:
+    """Return request network fields useful for audit/debugging."""
+    if request is None:
+        return {
+            "client_host": None,
+            "x_forwarded_for": None,
+            "x_real_ip": None,
+            "forwarded": None,
+            "user_agent": None,
+        }
+    client = getattr(request, "client", None)
+    return {
+        "client_host": getattr(client, "host", None),
+        "x_forwarded_for": request.headers.get("x-forwarded-for"),
+        "x_real_ip": request.headers.get("x-real-ip"),
+        "forwarded": request.headers.get("forwarded"),
+        "user_agent": request.headers.get("user-agent"),
+    }
+
+
 def log_request_network_debug(request, *, context: str) -> None:
     """Temporary helper to inspect which client IP headers reach the app."""
-    if request is None:
-        logger.info("[network-debug] %s request=None", context)
-        return
-
-    client = getattr(request, "client", None)
+    meta = request_network_metadata(request)
     logger.info(
         "[network-debug] %s client_host=%s x_forwarded_for=%r x_real_ip=%r "
         "forwarded=%r user_agent=%r",
         context,
-        getattr(client, "host", None),
-        request.headers.get("x-forwarded-for"),
-        request.headers.get("x-real-ip"),
-        request.headers.get("forwarded"),
-        request.headers.get("user-agent"),
+        meta["client_host"],
+        meta["x_forwarded_for"],
+        meta["x_real_ip"],
+        meta["forwarded"],
+        meta["user_agent"],
     )
 
 

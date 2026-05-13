@@ -280,6 +280,13 @@ async def test_superuser_successful_login_emits_audit_with_ip_role_metadata():
     assert events[0].metadata_json == {
         "ip": "10.0.0.24",
         "user_agent": "pytest-browser",
+        "network": {
+            "client_host": "10.0.0.24",
+            "x_forwarded_for": None,
+            "x_real_ip": None,
+            "forwarded": None,
+            "user_agent": "pytest-browser",
+        },
         "role": "security_admin",
         "is_superuser": True,
         "success": True,
@@ -342,6 +349,13 @@ async def test_superuser_failed_login_emits_audit_with_ip_metadata():
     assert events[0].metadata_json == {
         "ip": "10.0.0.42",
         "user_agent": "pytest-browser",
+        "network": {
+            "client_host": "10.0.0.42",
+            "x_forwarded_for": None,
+            "x_real_ip": None,
+            "forwarded": None,
+            "user_agent": "pytest-browser",
+        },
         "is_superuser": True,
         "success": False,
     }
