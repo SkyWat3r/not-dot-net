@@ -1,6 +1,8 @@
 """Audit log viewer — admin-only tab showing system events."""
 
+import json
 from datetime import datetime, timedelta, timezone
+from html import escape
 
 from nicegui import ui
 
@@ -121,6 +123,75 @@ def _format_full(dt: datetime | None) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S") if dt else ""
 
 
+def _format_metadata(metadata: dict | None) -> str:
+    if not metadata:
+        return ""
+    return json.dumps(metadata, ensure_ascii=False, sort_keys=True)
+
+
+def _flatten_metadata(metadata: dict | None, prefix: str = "") -> list[tuple[str, str]]:
+    if not metadata:
+        return []
+
+    items = []
+    for key, value in metadata.items():
+        label = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(value, dict):
+            items.extend(_flatten_metadata(value, label))
+        elif isinstance(value, list):
+            items.append((label, json.dumps(value, ensure_ascii=False)))
+        else:
+            items.append((label, str(value)))
+    return items
+
+
+def _metadata_detail_html(metadata: dict | None) -> str:
+    items = _flatten_metadata(metadata)
+    if not items:
+        return '<div class="text-grey">—</div>'
+
+    rows = []
+    for key, value in items:
+        rows.append(
+            '<div style="display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 5px 0; border-bottom: 1px solid rgba(0,0,0,.06);">'
+            f'<div style="font-weight: 600; color: #455a64; min-width: 120px; max-width: 100%; overflow-wrap: anywhere;">{escape(key)}</div>'
+            f'<div style="flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere;">{escape(value)}</div>'
+            '</div>'
+        )
+    return "".join(rows)
+
+
+def _detail_field_html(label: str, value: str | None) -> str:
+    display = value if value else "—"
+    return (
+        '<div style="margin-bottom: 10px;">'
+        f'<div style="font-size: 11px; text-transform: uppercase; color: #607d8b; letter-spacing: .03em;">{escape(label)}</div>'
+        f'<div style="word-break: break-word;">{escape(display)}</div>'
+        '</div>'
+    )
+
+
+def _log_detail_html(row: dict) -> str:
+    severity = row.get("severity", "green")
+    severity_label = t(SEVERITY_LABEL_KEY.get(severity, SEVERITY_LABEL_KEY["green"]))
+    severity_color = SEVERITY_ROW_COLOR.get(severity, SEVERITY_ROW_COLOR["green"])
+    metadata = row.get("metadata_json") if isinstance(row.get("metadata_json"), dict) else None
+    return (
+        '<div style="font-size: 13px; line-height: 1.35;">'
+        f'<div style="display: inline-block; padding: 4px 8px; margin-bottom: 12px; border-radius: 6px; '
+        f'background: {severity_color}; border: 1px solid rgba(0,0,0,.12);">{escape(severity_label)}</div>'
+        f'{_detail_field_html(t("time"), row.get("time_full"))}'
+        f'{_detail_field_html(t("category"), row.get("category"))}'
+        f'{_detail_field_html(t("action"), row.get("action"))}'
+        f'{_detail_field_html(t("actor"), row.get("actor"))}'
+        f'{_detail_field_html(t("target"), row.get("target"))}'
+        f'{_detail_field_html(t("detail"), row.get("detail"))}'
+        f'<div style="font-size: 11px; text-transform: uppercase; color: #607d8b; letter-spacing: .03em; margin-top: 12px;">{escape(t("metadata"))}</div>'
+        f'<div style="margin-top: 6px;">{_metadata_detail_html(metadata)}</div>'
+        '</div>'
+    )
+
+
 def _build_row(ev: AuditEventView, severity: str, relative_time: bool) -> dict:
     full = _format_full(ev.created_at)
     relative = _relative_time_label(ev.created_at)
@@ -134,6 +205,7 @@ def _build_row(ev: AuditEventView, severity: str, relative_time: bool) -> dict:
         "actor": ev.actor_display or "—",
         "target": f"{ev.target_type}: {ev.target_display}" if ev.target_type and ev.target_display else "—",
         "detail": ev.detail or "",
+        "metadata_json": ev.metadata_json or {},
         "severity": severity,
         "severity_row": SEVERITY_ROW_COLOR[severity],
     }
@@ -271,16 +343,40 @@ async def _render_log(
             ui.label(t("no_events")).classes("text-grey")
             return
 
-        table = ui.table(
-            columns=columns, rows=rows, row_key="_id",
-            pagination={"rowsPerPage": 25},
-        ).classes("w-full")
-        table.props("flat bordered dense")
+        with ui.row().classes("w-full items-start gap-3"):
+            with ui.element("div").classes("flex-1 min-w-0"):
+                table = ui.table(
+                    columns=columns, rows=rows, row_key="_id",
+                    pagination={"rowsPerPage": 25},
+                ).classes("w-full")
+                table.props("flat bordered dense")
+
+            with ui.card() as detail_panel:
+                detail_panel.classes("w-1/4 min-w-[300px] max-w-[440px] q-pa-md sticky top-4")
+                ui.label(t("audit_log")).classes("text-subtitle2 text-grey-7")
+                detail_content = ui.html(
+                    f'<div class="text-grey">{escape(t("select_audit_log"))}</div>'
+                ).classes("w-full")
+                detail_panel.set_visibility(False)
+
+        def show_log_detail(e):
+            row = e.args
+            if not isinstance(row, dict):
+                return
+            detail_content.set_content(_log_detail_html(row))
+            detail_panel.set_visibility(True)
+
+        table.on("row-click", show_log_detail)
 
         # This `body` slot replaces the full row template. Any new column added
         # above must also be rendered below.
         table.add_slot("body", r'''
-            <q-tr :props="props" :style="{ backgroundColor: props.row.severity_row }">
+            <q-tr
+                :props="props"
+                :style="{ backgroundColor: props.row.severity_row }"
+                class="cursor-pointer"
+                @click="() => $parent.$emit('row-click', props.row)"
+            >
                 <q-td key="time" :props="props">{{ props.row.time }}</q-td>
                 <q-td key="category" :props="props">
                     <q-badge

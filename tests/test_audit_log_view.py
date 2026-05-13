@@ -115,6 +115,32 @@ def test_unknown_event_defaults_to_normal():
     assert al._audit_severity(_ev("booking", "create")) == "green"
 
 
+# --- metadata display -------------------------------------------------------
+
+def test_format_metadata_empty_returns_empty_string():
+    assert al._format_metadata(None) == ""
+    assert al._format_metadata({}) == ""
+
+
+def test_format_metadata_renders_stable_json():
+    assert al._format_metadata({"b": 2, "a": "x"}) == '{"a": "x", "b": 2}'
+
+
+def test_flatten_metadata_handles_nested_values():
+    assert al._flatten_metadata(
+        {"ip": "127.0.0.1", "network": {"client_host": "10.0.0.42"}}
+    ) == [
+        ("ip", "127.0.0.1"),
+        ("network.client_host", "10.0.0.42"),
+    ]
+
+
+def test_metadata_detail_html_escapes_values():
+    html = al._metadata_detail_html({"user_agent": "<script>"})
+    assert "&lt;script&gt;" in html
+    assert "<script>" not in html
+
+
 # --- relative time labels ---------------------------------------------------
 
 NOW = datetime(2026, 5, 4, 14, 30, 0)

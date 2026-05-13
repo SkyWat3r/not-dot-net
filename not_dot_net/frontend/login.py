@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from not_dot_net.backend.audit import (
     log_audit,
     log_request_network_debug,
+    request_network_metadata,
     request_ip,
     request_user_agent,
 )
@@ -89,6 +90,7 @@ async def _audit_failed_superuser_login(username: str, request: Request) -> None
 
     ip = request_ip(request)
     user_agent = request_user_agent(request)
+    network = request_network_metadata(request)
     await log_audit(
         "auth", "login",
         actor_id=user.id,
@@ -97,6 +99,7 @@ async def _audit_failed_superuser_login(username: str, request: Request) -> None
         metadata={
             "ip": ip,
             "user_agent": user_agent,
+            "network": network,
             "is_superuser": True,
             "success": False,
         },
