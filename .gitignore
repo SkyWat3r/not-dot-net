@@ -121,3 +121,9 @@ tests/failles_securite_intranet.md
 .codex
 *.key
 data/encrypted/
+
+# Local data / inventory files — never commit
+old-intranet-pages/
+old-intranet-pages.json
+old-intranet-resources.json
+.serena/
