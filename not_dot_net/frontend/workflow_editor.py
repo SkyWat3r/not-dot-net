@@ -410,10 +410,6 @@ class WorkflowEditorDialog:
                      on_change=lambda e, k=wf_key: self.set_workflow_label(k, e.value)
                      ).classes("w-full").props("dense outlined stack-label").tooltip(t("wf_label_help"))
 
-            ui.input(t("wf_start_role"), value=wf.start_role or "",
-                     on_change=lambda e, k=wf_key: self.set_workflow_field(k, "start_role", e.value)
-                     ).classes("w-full").props("dense outlined stack-label").tooltip(t("wf_start_role_help"))
-
             with ui.expansion(t("wf_section_about_other"), icon="person_search").classes("w-full"):
                 field_names = sorted({f.name for s in wf.steps for f in s.fields if f.name})
                 if field_names:

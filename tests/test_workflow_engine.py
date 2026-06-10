@@ -14,7 +14,6 @@ from not_dot_net.config import WorkflowConfig, WorkflowStepConfig, FieldConfig
 
 TWO_STEP_WORKFLOW = WorkflowConfig(
     label="Test",
-    start_role="staff",
     steps=[
         WorkflowStepConfig(key="form1", type="form", assignee_role="staff", assignee_permission="create_workflows", actions=["submit"]),
         WorkflowStepConfig(key="approve", type="approval", assignee_role="director", assignee_permission="approve_workflows", actions=["approve", "reject"]),
@@ -23,7 +22,6 @@ TWO_STEP_WORKFLOW = WorkflowConfig(
 
 PARTIAL_SAVE_WORKFLOW = WorkflowConfig(
     label="Test Partial",
-    start_role="staff",
     steps=[
         WorkflowStepConfig(
             key="info",
@@ -202,7 +200,6 @@ async def test_can_user_act_wrong_target():
 async def test_can_user_act_requester():
     requester_wf = WorkflowConfig(
         label="Test",
-        start_role="staff",
         steps=[WorkflowStepConfig(key="review", type="form", assignee="requester", actions=["submit"])],
     )
     user = FakeUser("member", id="user-42")

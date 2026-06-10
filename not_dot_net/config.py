@@ -59,7 +59,6 @@ class WorkflowStepConfig(BaseModel):
 
 class WorkflowConfig(BaseModel):
     label: str
-    start_role: str = "staff"
     target_email_field: str | None = None
     steps: list[WorkflowStepConfig]
     notifications: list[NotificationRuleConfig] = []

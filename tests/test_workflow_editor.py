@@ -514,7 +514,6 @@ max_upload_size_mb: 10
 workflows:
   a:
     label: From YAML
-    start_role: staff
     steps: []
     notifications: []
     document_instructions: {}
@@ -685,7 +684,6 @@ max_upload_size_mb: 10
 workflows:
   a:
     label: From YAML Save
-    start_role: staff
     steps: []
     notifications: []
     document_instructions: {}

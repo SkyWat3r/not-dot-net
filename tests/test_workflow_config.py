@@ -19,7 +19,6 @@ async def test_workflow_config_has_required_fields():
     cfg = await workflows_config.get()
     wf = cfg.workflows["vpn_access"]
     assert wf.label == "VPN Access Request"
-    assert wf.start_role == "staff"
     assert wf.target_email_field == "target_email"
     assert len(wf.steps) >= 2
 

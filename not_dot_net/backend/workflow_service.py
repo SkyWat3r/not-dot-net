@@ -168,7 +168,6 @@ class WorkflowsConfig(BaseModel):
     workflows: dict[str, WorkflowConfig] = {
         "vpn_access": WorkflowConfig(
             label="VPN Access Request",
-            start_role="staff",
             target_email_field="target_email",
             steps=[
                 WorkflowStepConfig(
@@ -268,7 +267,6 @@ class WorkflowsConfig(BaseModel):
         ),
         "ordre_de_mission": WorkflowConfig(
             label="Ordre de Mission",
-            start_role="staff",
             steps=[
                 WorkflowStepConfig(
                     key="submission",

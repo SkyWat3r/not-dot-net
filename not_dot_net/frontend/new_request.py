@@ -38,11 +38,13 @@ async def render(user: User):
     clone = app.storage.user.pop("clone_prefill", None)
     container = ui.column().classes("w-full")
 
+    can_create = await has_permissions(user, "create_workflows")
+
     with container:
         ui.label(t("select_workflow")).classes("text-h6 mb-4")
 
         for wf_key, wf_config in cfg.workflows.items():
-            if not await has_permissions(user, "create_workflows"):
+            if not can_create:
                 continue
             if not wf_config.steps:
                 continue
@@ -78,9 +80,30 @@ async def render(user: User):
                     fc.set_visibility(True)
                     with fc:
                         prefill = dict(prefill_data or {})
+                        selection: dict = {}
+                        rendered_fields: dict = {}
+
                         if key == "onboarding":
-                            prefill.update(await _render_returning_search(fc))
-                        await render_step_form(step, prefill, on_submit=submit_fn)
+                            def on_select(match: dict):
+                                selection["returning_user_id"] = match["id"]
+                                selection["email"] = match["email"]
+                                email_field = rendered_fields.get("contact_email")
+                                if email_field is not None:
+                                    email_field.set_value(match["email"])
+
+                            _render_returning_search(on_select)
+
+                        async def submit_with_selection(data, _submit=submit_fn):
+                            merged = dict(data)
+                            # Link the returning person only while the email still
+                            # matches the selection — editing it cancels the link.
+                            if selection and data.get("contact_email") == selection.get("email"):
+                                merged["returning_user_id"] = selection["returning_user_id"]
+                            await _submit(merged)
+
+                        rendered_fields.update(
+                            await render_step_form(step, prefill, on_submit=submit_with_selection)
+                        )
 
                 async def toggle_form(fc=form_container, step=first_step, key=wf_key, open_fn=_open_form):
                     if fc.visible:
@@ -96,34 +119,30 @@ async def render(user: User):
                              _open_form(fc, step, key, cd), once=True)
 
 
-async def _render_returning_search(container) -> dict:
-    """Render returning-person search. Returns prefill data dict."""
-    prefill = {}
-    results_container = ui.column().classes("w-full")
-
-    async def on_search(e):
-        matches = await _search_users(search_input.value)
-        results_container.clear()
-        with results_container:
-            for match in matches:
-                active_label = "" if match["active"] else " (inactive)"
-                async def select_user(m=match):
-                    nonlocal prefill
-                    prefill["contact_email"] = m["email"]
-                    prefill["returning_user_id"] = m["id"]
-                    search_input.value = m["name"]
-                    results_container.clear()
-                    with results_container:
-                        ui.chip(
-                            f"Returning: {m['name']}{active_label}",
-                            icon="person",
-                            color="blue",
-                        )
-                ui.item(f"{match['name']} — {match['email']}{active_label}", on_click=select_user)
-
+def _render_returning_search(on_select) -> None:
+    """Render returning-person search. Calls on_select(match) on selection."""
     with ui.expansion(t("search_existing"), icon="search").classes("w-full mb-2"):
         search_input = ui.input(label=t("search_by_name_email")).props("outlined dense")
-        search_input.on("keyup", on_search, throttle=0.3)
-        results_container
+        results_container = ui.column().classes("w-full")
 
-    return prefill
+        async def on_search(e):
+            matches = await _search_users(search_input.value)
+            results_container.clear()
+            with results_container:
+                for match in matches:
+                    active_label = "" if match["active"] else " (inactive)"
+
+                    async def select_user(m=match, lbl=active_label):
+                        on_select(m)
+                        search_input.value = m["name"]
+                        results_container.clear()
+                        with results_container:
+                            ui.chip(
+                                f"Returning: {m['name']}{lbl}",
+                                icon="person",
+                                color="blue",
+                            )
+
+                    ui.item(f"{match['name']} — {match['email']}{active_label}", on_click=select_user)
+
+        search_input.on("keyup", on_search, throttle=0.3)

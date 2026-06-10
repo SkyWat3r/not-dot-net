@@ -14,7 +14,6 @@ from not_dot_net.config import (
 
 VPN_WORKFLOW = WorkflowConfig(
     label="VPN Access Request",
-    start_role="staff",
     target_email_field="target_email",
     steps=[
         WorkflowStepConfig(key="request", type="form", assignee_role="staff", actions=["submit"]),
@@ -335,7 +334,6 @@ async def test_notify_non_token_event_does_not_include_token_link():
 
 ONBOARDING_WORKFLOW = WorkflowConfig(
     label="Newcomer Onboarding",
-    start_role="staff",
     target_email_field="target_email",
     steps=[
         WorkflowStepConfig(key="fill_form", type="form", assignee_role="target_person", actions=["submit"]),

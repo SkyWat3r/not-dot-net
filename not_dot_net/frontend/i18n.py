@@ -321,8 +321,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # Workflow editor friendliness
         "wf_label": "Display name",
         "wf_label_help": "Shown to users in the dashboard and request lists.",
-        "wf_start_role": "Who can create new requests?",
-        "wf_start_role_help": "Anyone with this role sees this workflow on the new-request page.",
         "wf_target_email": "Which field holds the target person's email?",
         "wf_target_email_help": "For workflows about another person (e.g. onboarding) — pick which form field holds their email so we can send them token links.",
         "wf_section_basics": "Basics",
@@ -740,8 +738,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # Workflow editor friendliness
         "wf_label": "Nom affiché",
         "wf_label_help": "Affiché aux utilisateurs dans le tableau de bord et les listes de demandes.",
-        "wf_start_role": "Qui peut créer de nouvelles demandes ?",
-        "wf_start_role_help": "Toute personne ayant ce rôle voit ce workflow sur la page de nouvelle demande.",
         "wf_target_email": "Quel champ contient l'e-mail de la personne concernée ?",
         "wf_target_email_help": "Pour les workflows concernant une autre personne (ex. onboarding) — choisissez le champ du formulaire qui contient son e-mail, afin de lui envoyer un lien par token.",
         "wf_section_basics": "Général",
