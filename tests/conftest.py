@@ -27,7 +27,7 @@ async def mock_ad_effects(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-async def setup_db():
+async def setup_db(monkeypatch):
     """Set up an in-memory SQLite DB and dev secrets for each test."""
     init_user_secrets(AppSecrets(jwt_secret="test-secret-that-is-long-enough-for-hs256", storage_secret="test-storage", file_encryption_key="test-file-encryption-key-32bytes!"))
 
@@ -37,6 +37,14 @@ async def setup_db():
     old_engine, old_session = db_module._engine, db_module._async_session_maker
     db_module._engine = engine
     db_module._async_session_maker = session_maker
+
+    # The NiceGUI user fixture executes not_dot_net/app.py main(), whose
+    # init_db() would rebind the engine to ./dev.db mid-test — every
+    # user-fixture test would then silently read/write the developer's
+    # database. app.py imports init_db by name, so patch both references.
+    import not_dot_net.app as app_module
+    monkeypatch.setattr(db_module, "init_db", lambda url: None)
+    monkeypatch.setattr(app_module, "init_db", lambda url: None)
 
     import not_dot_net.backend.workflow_models  # noqa: F401
     import not_dot_net.backend.booking_models  # noqa: F401
