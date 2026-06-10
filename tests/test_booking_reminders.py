@@ -97,7 +97,8 @@ async def test_send_booking_end_reminders_queues_mail_and_marks_booking():
     assert queued == 1
     send.assert_awaited_once()
     assert send.await_args.args[0] == user.email
-    assert "booking ends in 1 day" in send.await_args.args[1]
+    # end_date is the exclusive hand-back day; the user's last day is today
+    assert "booking ends today" in send.await_args.args[1]
 
     async with session_scope() as session:
         stored = await session.get(Booking, booking.id)
@@ -121,7 +122,7 @@ async def test_send_booking_end_reminders_does_not_send_twice():
 async def test_send_booking_end_reminders_ignores_later_bookings():
     user = await _create_user()
     resource = await _create_resource()
-    await _create_booking(user, resource, end_offset_days=2)
+    await _create_booking(user, resource, end_offset_days=3)
 
     with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
         queued = await send_booking_end_reminders(today=date(2026, 5, 26))
@@ -137,7 +138,7 @@ async def test_send_booking_end_reminders_ignores_later_bookings():
 async def test_send_booking_end_reminders_uses_configured_lead_days():
     user = await _create_user()
     resource = await _create_resource()
-    await _create_booking(user, resource, end_offset_days=7)
+    await _create_booking(user, resource, end_offset_days=8)
     await bookings_config.set(BookingsConfig(reminder_lead_days=[7]))
     try:
         with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
@@ -165,10 +166,10 @@ async def test_send_booking_end_reminders_can_be_disabled_with_empty_lead_days()
     send.assert_not_awaited()
 
 
-async def test_send_booking_end_reminders_zero_lead_days_sends_on_end_date():
+async def test_send_booking_end_reminders_zero_lead_days_sends_on_last_day():
     user = await _create_user()
     resource = await _create_resource()
-    await _create_booking(user, resource, end_offset_days=0)
+    await _create_booking(user, resource, end_offset_days=1)
     await bookings_config.set(BookingsConfig(reminder_lead_days=[0]))
     try:
         with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
@@ -224,7 +225,7 @@ async def test_send_booking_end_reminders_catches_up_missed_lead_day():
 
     assert queued == 1
     send.assert_awaited_once()
-    assert "in 2 days" in send.await_args.args[1]
+    assert "in 1 day" in send.await_args.args[1]
 
     async with session_scope() as session:
         stored = await session.get(Booking, booking.id)
@@ -235,7 +236,7 @@ async def test_send_booking_end_reminders_sends_one_mail_for_multiple_missed_lea
     """Catching up on several missed lead days must send a single email."""
     user = await _create_user()
     resource = await _create_resource()
-    booking = await _create_booking(user, resource, end_offset_days=0)
+    booking = await _create_booking(user, resource, end_offset_days=1)
     await bookings_config.set(BookingsConfig(reminder_lead_days=[1, 7]))
 
     with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
@@ -247,3 +248,31 @@ async def test_send_booking_end_reminders_sends_one_mail_for_multiple_missed_lea
     async with session_scope() as session:
         stored = await session.get(Booking, booking.id)
         assert stored.reminder_sent_lead_days == [1, 7]
+
+
+async def test_no_reminder_once_last_usage_day_has_passed():
+    """A booking freeing up today (last usage day yesterday) must not remind."""
+    user = await _create_user()
+    resource = await _create_resource()
+    await _create_booking(user, resource, end_offset_days=0)
+    await bookings_config.set(BookingsConfig(reminder_lead_days=[0, 1, 7]))
+
+    with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
+        queued = await send_booking_end_reminders(today=date(2026, 5, 26))
+
+    assert queued == 0
+    send.assert_not_awaited()
+
+
+def test_render_booking_reminder_body_shows_inclusive_last_day():
+    user = User(id=uuid.uuid4(), email="x@test.com", hashed_password="x", full_name="X")
+    resource = Resource(name="PC", resource_type="desktop")
+    booking = Booking(
+        user_id=user.id, resource_id=resource.id,
+        start_date=date(2026, 5, 20), end_date=date(2026, 5, 28),
+    )
+
+    body = render_booking_reminder_body(user=user, booking=booking, resource=resource)
+
+    assert "2026-05-27" in body      # last usage day
+    assert "2026-05-28" not in body  # exclusive hand-back day never shown

@@ -45,3 +45,33 @@ async def test_logout_redirects_to_login_and_clears_auth_cookie() -> None:
     set_cookie_headers = response.headers.getlist("set-cookie")
     assert any("fastapiusersauth=" in header for header in set_cookie_headers)
     assert any("Max-Age=0" in header for header in set_cookie_headers)
+
+
+async def test_login_page_redirects_authenticated_users(user: User) -> None:
+    """R-06: a logged-in user visiting /login must land on the app, not the
+    login form. (The old check read a storage flag that nothing ever set.)"""
+    import asyncio
+    from contextlib import asynccontextmanager
+
+    from not_dot_net.backend.db import session_scope, get_user_db
+    from not_dot_net.backend.schemas import UserCreate
+    from not_dot_net.backend.users import get_user_manager, get_jwt_strategy
+
+    await user.open("/login")
+    await asyncio.sleep(0.2)  # let startup tasks finish
+
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as manager:
+                from fastapi_users.exceptions import UserAlreadyExists
+                try:
+                    db_user = await manager.create(
+                        UserCreate(email="relogin@test.com", password="pw123456")
+                    )
+                except UserAlreadyExists:
+                    db_user = await manager.get_by_email("relogin@test.com")
+    token = await get_jwt_strategy().write_token(db_user)
+    user.http_client.cookies.set("fastapiusersauth", token)
+
+    await user.open("/login")
+    await user.should_see("Dashboard")

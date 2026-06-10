@@ -66,6 +66,12 @@ def _truncate_booking_owner(name: str, max_chars: int = 24) -> str:
     return name if len(name) <= max_chars else f"{name[:max_chars]}..."
 
 
+def _format_booking_period(start: date, end_exclusive: date) -> str:
+    """end_date is the exclusive hand-back day — show the inclusive range
+    the user actually picked."""
+    return f"{start} → {end_exclusive - timedelta(days=1)}"
+
+
 def render(user: User):
     container = ui.column().classes("w-full")
 
@@ -104,7 +110,7 @@ async def _render_bookings(container, user: User, filter_range=None):
                             with ui.column().classes("gap-0"):
                                 ui.label(res_name).classes("font-bold")
                                 ui.label(
-                                    f"{bk.start_date} → {bk.end_date}"
+                                    _format_booking_period(bk.start_date, bk.end_date)
                                 ).classes("text-sm text-grey-8")
                                 if bk.os_choice:
                                     ui.label(bk.os_choice).classes("text-xs text-grey")
@@ -389,7 +395,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
             is_own = bk.user_id == user.id
             with ui.row().classes("items-center gap-2 w-full flex-wrap"):
                 ui.label(
-                    f"{bk.start_date} → {bk.end_date}"
+                    _format_booking_period(bk.start_date, bk.end_date)
                 ).classes("text-sm")
                 ui.label(owner_name).classes("text-sm text-grey")
                 if bk.os_choice:

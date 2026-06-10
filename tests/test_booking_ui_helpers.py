@@ -67,3 +67,11 @@ def test_truncate_booking_owner_limits_display_name():
     assert _truncate_booking_owner("lucas.bazin@lpp.polytechnique.fr") == (
         "lucas.bazin@lpp.polytech..."
     )
+
+
+def test_format_booking_period_shows_inclusive_last_day():
+    """R-07: stored end_date is the exclusive hand-back day; cards must show
+    the range the user actually picked (inclusive last day)."""
+    from not_dot_net.frontend.bookings import _format_booking_period
+
+    assert _format_booking_period(date(2026, 6, 10), date(2026, 6, 13)) == "2026-06-10 → 2026-06-12"

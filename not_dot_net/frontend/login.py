@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from nicegui import app, ui
+from nicegui import ui
 from sqlalchemy import func, select
 
 from not_dot_net.backend.audit import (
@@ -177,10 +177,14 @@ def _safe_redirect(redirect_to: str) -> str:
 
 def setup():
     @ui.page("/login")
-    def login(redirect_to: str = "/", error: str = "") -> Optional[RedirectResponse]:
+    def login(
+        redirect_to: str = "/",
+        error: str = "",
+        user: Optional[User] = Depends(current_active_user_optional),
+    ) -> Optional[RedirectResponse]:
         safe_dest = _safe_redirect(redirect_to)
 
-        if app.storage.user.get("authenticated", False):
+        if user is not None:
             return RedirectResponse(safe_dest)
 
         ui.colors(primary="#0F52AC")

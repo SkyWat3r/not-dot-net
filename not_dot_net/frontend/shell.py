@@ -157,5 +157,4 @@ def setup():
 
 
 def _logout():
-    app.storage.user["authenticated"] = False
     ui.navigate.to("/logout")

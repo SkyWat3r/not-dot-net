@@ -240,6 +240,12 @@ async def get_resource_by_id(resource_id: uuid.UUID) -> Resource | None:
 # --- Booking reminders ---
 
 
+def booking_last_day(end_date: date) -> date:
+    """Bookings store an exclusive end (hand-back day); users think in
+    inclusive last-usage days. All user-facing dates use this."""
+    return end_date - timedelta(days=1)
+
+
 def _booking_reminder_delay_label(days_until_end: int) -> str:
     if days_until_end == 0:
         return "today"
@@ -268,7 +274,7 @@ def render_booking_reminder_body(
         "<table>"
         f"<tr><td><strong>Resource</strong></td><td>{escape(resource.name)}</td></tr>"
         f"<tr><td><strong>Start date</strong></td><td>{booking.start_date}</td></tr>"
-        f"<tr><td><strong>End date</strong></td><td>{booking.end_date}</td></tr>"
+        f"<tr><td><strong>End date</strong></td><td>{booking_last_day(booking.end_date)}</td></tr>"
         f"<tr><td><strong>OS</strong></td><td>{escape(booking.os_choice or '-')}</td></tr>"
         f"<tr><td><strong>Software</strong></td><td>{escape(software)}</td></tr>"
         "</table>"
@@ -286,7 +292,9 @@ async def send_booking_end_reminders(today: date | None = None) -> int:
     lead_days = (await bookings_config.get()).reminder_lead_days
     if not lead_days:
         return 0
-    latest_end = today + timedelta(days=max(lead_days))
+    # end_date is exclusive: a last usage day `lead` days out means
+    # end_date = today + lead + 1.
+    latest_end = today + timedelta(days=max(lead_days) + 1)
     queued = 0
 
     async with session_scope() as session:
@@ -306,7 +314,9 @@ async def send_booking_end_reminders(today: date | None = None) -> int:
         rows = list(result.all())
 
         for booking, user, resource in rows:
-            days_until_end = (booking.end_date - today).days
+            days_until_end = (booking_last_day(booking.end_date) - today).days
+            if days_until_end < 0:
+                continue
             sent_lead_days = set(booking.reminder_sent_lead_days or [])
             # Catch up on lead days the job missed (e.g. it wasn't running on
             # the exact day) — one email covers every lead that has passed.
