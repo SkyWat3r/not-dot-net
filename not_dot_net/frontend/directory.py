@@ -24,6 +24,13 @@ from not_dot_net.config import files_config
 MANAGE_USERS = permission("manage_users", "Manage users", "Edit/delete users in directory")
 
 
+def parse_optional_date(value: str | None) -> date | None:
+    """Empty input → None; invalid format raises ValueError (ISO only)."""
+    if not value or not value.strip():
+        return None
+    return date.fromisoformat(value.strip())
+
+
 def _serialize_value(v) -> str | None:
     """Convert a value to a JSON-friendly string for audit logging."""
     if v is None:
@@ -561,8 +568,12 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
                 if k in readonly_fields:
                     continue
                 val = v.value or None
-                if k in ("start_date", "end_date") and val:
-                    val = date.fromisoformat(val)
+                if k in ("start_date", "end_date"):
+                    try:
+                        val = parse_optional_date(val)
+                    except ValueError:
+                        ui.notify(t("invalid_date"), color="negative")
+                        return
                 submitted[k] = val
 
             current = {k: getattr(person, k) for k in submitted}
@@ -703,8 +714,12 @@ async def _tenure_add_dialog(person: User, current_user: User, on_refresh):
             if not status_input.value or not employer_input.value or not start_input.value:
                 ui.notify(t("required_field"), color="warning")
                 return
-            start = date.fromisoformat(start_input.value)
-            end = date.fromisoformat(end_input.value) if end_input.value else None
+            try:
+                start = parse_optional_date(start_input.value)
+                end = parse_optional_date(end_input.value)
+            except ValueError:
+                ui.notify(t("invalid_date"), color="negative")
+                return
             await _add(
                 user_id=person.id,
                 status=status_input.value,
@@ -753,8 +768,12 @@ async def _tenure_edit_dialog(tenure_id, person: User, current_user: User, on_re
             if not status_input.value or not employer_input.value or not start_input.value:
                 ui.notify(t("required_field"), color="warning")
                 return
-            start = date.fromisoformat(start_input.value)
-            end = date.fromisoformat(end_input.value) if end_input.value else None
+            try:
+                start = parse_optional_date(start_input.value)
+                end = parse_optional_date(end_input.value)
+            except ValueError:
+                ui.notify(t("invalid_date"), color="negative")
+                return
             await _update(
                 tenure_id,
                 status=status_input.value,

@@ -160,3 +160,28 @@ async def test_exhausted_attempts_do_not_allow_regeneration_before_expiry():
         await verify_code(req.id, "000000")
 
     assert await generate_verification_code(req.id) is None
+
+
+async def test_is_locked_out_reports_exhausted_attempts():
+    """R-12: the token page needs to distinguish 'locked out' from 'no code
+    yet' — both made has_valid_code return False, so the page offered a
+    Send-code button that then refused with a misleading message."""
+    from not_dot_net.backend.verification import is_locked_out
+
+    req = await _create_test_request()
+    assert await is_locked_out(req.id) is False
+
+    await generate_verification_code(req.id)
+    for _ in range(MAX_ATTEMPTS):
+        await verify_code(req.id, "000000")
+
+    assert await is_locked_out(req.id) is True
+    assert await has_valid_code(req.id) is False
+
+    # Once the code expires, the lockout lifts (a new code may be requested).
+    from not_dot_net.backend.db import session_scope
+    async with session_scope() as session:
+        stored = await session.get(WorkflowRequest, req.id)
+        stored.code_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=1)
+        await session.commit()
+    assert await is_locked_out(req.id) is False

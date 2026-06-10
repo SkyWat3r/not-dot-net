@@ -6,7 +6,12 @@ from nicegui import ui
 
 from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.encrypted_storage import store_encrypted
-from not_dot_net.backend.verification import generate_verification_code, has_valid_code, verify_code
+from not_dot_net.backend.verification import (
+    generate_verification_code,
+    has_valid_code,
+    is_locked_out,
+    verify_code,
+)
 from not_dot_net.backend.workflow_models import WorkflowFile
 from not_dot_net.backend.workflow_service import (
     get_request_by_token,
@@ -51,7 +56,10 @@ def setup():
             async def send_code():
                 code = await generate_verification_code(req.id)
                 if code is None:
-                    ui.notify(t("code_already_sent"), color="info")
+                    if await is_locked_out(req.id):
+                        ui.notify(t("too_many_attempts"), color="negative")
+                    else:
+                        ui.notify(t("code_already_sent"), color="info")
                     return
                 wf_cfg = await workflows_config.get()
                 expiry = wf_cfg.verification_code_expiry_minutes
@@ -175,7 +183,10 @@ def setup():
                 )
 
             with container:
-                if await has_valid_code(req.id):
+                if await is_locked_out(req.id):
+                    ui.label(t("token_welcome")).classes("text-grey mb-4")
+                    ui.label(t("too_many_attempts")).classes("text-negative")
+                elif await has_valid_code(req.id):
                     _render_code_input(container, req, token, step_config, wf, send_code)
                 else:
                     ui.label(t("token_welcome")).classes("text-grey mb-4")

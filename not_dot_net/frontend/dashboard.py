@@ -125,6 +125,10 @@ def _render_actionable_urgency_badge(age: int) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _requests_title_key(*, sees_all: bool) -> str:
+    return "all_requests" if sees_all else "my_requests"
+
+
 async def _render_my_requests(container, user: User):
     container.clear()
     is_admin = await has_permissions(user, "view_audit_log")
@@ -133,7 +137,7 @@ async def _render_my_requests(container, user: User):
 
     with container:
         with ui.row().classes("items-center justify-between w-full mb-2"):
-            ui.label(t("my_requests")).classes("text-h6")
+            ui.label(t(_requests_title_key(sees_all=is_admin))).classes("text-h6")
             period_select = ui.select(
                 options=period_options,
                 value="last_30_days",

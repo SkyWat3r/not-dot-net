@@ -75,3 +75,11 @@ async def test_login_page_redirects_authenticated_users(user: User) -> None:
 
     await user.open("/login")
     await user.should_see("Dashboard")
+
+
+def test_session_lifetime_covers_a_workday():
+    """R-14: 1h cookie+JWT expiry silently logged people out mid-morning."""
+    from not_dot_net.backend.users import cookie_transport, get_jwt_strategy
+
+    assert cookie_transport.cookie_max_age >= 12 * 3600
+    assert get_jwt_strategy().lifetime_seconds == cookie_transport.cookie_max_age

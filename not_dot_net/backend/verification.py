@@ -52,6 +52,24 @@ async def generate_verification_code(request_id: uuid.UUID) -> str | None:
     return code
 
 
+async def is_locked_out(request_id: uuid.UUID) -> bool:
+    """True while attempts are exhausted and the code hasn't expired yet.
+
+    Lets the token page tell 'locked out, wait' apart from 'no code yet' —
+    generate_verification_code refuses regeneration in both cases.
+    """
+    async with session_scope() as session:
+        req = await session.get(WorkflowRequest, request_id)
+        if req is None or not req.verification_code_hash or not req.code_expires_at:
+            return False
+        if req.code_attempts < MAX_ATTEMPTS:
+            return False
+        expires = req.code_expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) < expires
+
+
 async def has_valid_code(request_id: uuid.UUID) -> bool:
     """Check if a valid unexpired code exists for this request."""
     async with session_scope() as session:
@@ -74,7 +92,9 @@ async def verify_code(request_id: uuid.UUID, code: str) -> bool:
             raise ValueError(f"Request {request_id} not found")
 
         if req.code_attempts >= MAX_ATTEMPTS:
-            raise PermissionError("Too many attempts — request a new code")
+            raise PermissionError(
+                "Too many attempts — wait for the current code to expire"
+            )
 
         if req.verification_code_hash is None or req.code_expires_at is None:
             return False

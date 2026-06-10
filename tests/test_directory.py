@@ -347,3 +347,17 @@ async def test_delete_user_requires_manage_users():
 
     with pytest.raises(PermissionError):
         await _delete_user(target.id, actor=actor)
+
+
+def test_parse_optional_date_handles_blank_and_invalid_input():
+    """R-13: free-text date fields crashed the save callback on typos."""
+    import pytest
+    from datetime import date as _date
+
+    from not_dot_net.frontend.directory import parse_optional_date
+
+    assert parse_optional_date("") is None
+    assert parse_optional_date(None) is None
+    assert parse_optional_date(" 2026-06-10 ") == _date(2026, 6, 10)
+    with pytest.raises(ValueError):
+        parse_optional_date("10/06/2026")

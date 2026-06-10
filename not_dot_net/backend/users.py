@@ -131,16 +131,20 @@ async def get_user_manager(
     yield UserManager(user_db)
 
 
+# 12h: long enough to cover a workday — 1h silently logged people out
+# mid-morning (no refresh mechanism on the cookie/JWT pair).
+SESSION_LIFETIME_S = 12 * 3600
+
 bearer_transport = BearerTransport(tokenUrl="auth/jwt/login")
 cookie_transport = CookieTransport(
     cookie_name="fastapiusersauth",
-    cookie_max_age=3600,
+    cookie_max_age=SESSION_LIFETIME_S,
     cookie_secure=True,  # production posture by default; set_dev_mode() flips it.
 )
 
 
 def get_jwt_strategy() -> JWTStrategy[models.UP, models.ID]:
-    return JWTStrategy(secret=_get_secret(), lifetime_seconds=3600)
+    return JWTStrategy(secret=_get_secret(), lifetime_seconds=SESSION_LIFETIME_S)
 
 
 jwt_backend = AuthenticationBackend(

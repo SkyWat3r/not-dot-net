@@ -133,3 +133,12 @@ async def test_get_actionable_count_target_person_only_counts_matching_email():
 
     assert await get_actionable_count(target) == 1
     assert await get_actionable_count(other) == 0
+
+
+def test_requests_section_title_reflects_scope():
+    """R-15: audit-log holders see ALL requests — the section must not be
+    titled 'My requests' for them."""
+    from not_dot_net.frontend.dashboard import _requests_title_key
+
+    assert _requests_title_key(sees_all=False) == "my_requests"
+    assert _requests_title_key(sees_all=True) == "all_requests"
