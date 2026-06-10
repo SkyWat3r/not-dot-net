@@ -326,3 +326,24 @@ async def test_self_edit_phone_writes_to_ad_and_local_db():
     async with session_scope() as session:
         refreshed = await session.get(User, user_id)
         assert refreshed.phone == "+33NEW"
+
+
+async def test_delete_user_requires_manage_users():
+    """R-10: deletion must be enforced server-side, not only at render time."""
+    import pytest
+    import uuid as _uuid
+
+    from not_dot_net.backend.db import User
+    from not_dot_net.frontend.directory import _delete_user
+
+    async with session_scope() as session:
+        target = User(id=_uuid.uuid4(), email="del-target@test.com", hashed_password="x", role="")
+        actor = User(id=_uuid.uuid4(), email="del-actor@test.com", hashed_password="x", role="")
+        session.add(target)
+        session.add(actor)
+        await session.commit()
+        await session.refresh(target)
+        await session.refresh(actor)
+
+    with pytest.raises(PermissionError):
+        await _delete_user(target.id, actor=actor)

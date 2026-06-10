@@ -371,6 +371,18 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
         )
 
 
+def _filter_step_data(step_cfg, data: dict | None) -> dict:
+    """Restrict token-submitted data to the current step's declared fields.
+
+    Token holders must not inject arbitrary keys into req.data (e.g.
+    returning_user_id, which decides whose tenure record gets created).
+    """
+    if not data:
+        return {}
+    allowed = {f.name for f in step_cfg.fields}
+    return {k: v for k, v in data.items() if k in allowed}
+
+
 async def _get_workflow_config(workflow_type: str):
     cfg = await workflows_config.get()
     wf = cfg.workflows.get(workflow_type)
@@ -503,6 +515,9 @@ async def submit_step(
             raise ValueError(
                 f"Action '{action}' is not allowed on step '{req.current_step}'"
             )
+
+        if actor_token is not None:
+            data = _filter_step_data(step_cfg, data)
 
         # Effects needing AD credentials must fail before any state change —
         # the frontend prompts for credentials and retries this same call.
@@ -706,6 +721,9 @@ async def save_draft(
             raise PermissionError(
                 f"Step '{req.current_step}' does not allow partial_save"
             )
+
+        if actor_token is not None:
+            data = _filter_step_data(step_cfg, data)
 
         merged = dict(req.data)
         merged.update(data)

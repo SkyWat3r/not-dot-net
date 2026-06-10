@@ -109,3 +109,41 @@ async def test_save_profile_photo_stores_thumbnail():
     with Image.open(BytesIO(saved)) as image:
         assert image.format == "JPEG"
         assert max(image.size) <= PROFILE_PHOTO_MAX_DIMENSION_PX
+
+
+import uuid
+
+import pytest
+
+
+async def _make_user(email: str, *, role: str = "", superuser: bool = False) -> User:
+    async with session_scope() as session:
+        user = User(
+            id=uuid.uuid4(), email=email, hashed_password="x",
+            role=role, is_superuser=superuser,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+
+async def test_save_profile_photo_rejects_other_users_without_permission():
+    """R-10: the service must enforce who may change whose photo — the
+    frontend's render-time gating is not enough."""
+    target = await _make_user("photo-target@test.com")
+    actor = await _make_user("photo-actor@test.com")
+
+    with pytest.raises(PermissionError):
+        await save_profile_photo(target.id, JPEG_BYTES, actor=actor)
+    with pytest.raises(PermissionError):
+        await remove_profile_photo(target.id, actor=actor)
+
+
+async def test_save_profile_photo_allows_self_and_superuser():
+    target = await _make_user("photo-self@test.com")
+    admin = await _make_user("photo-admin@test.com", superuser=True)
+
+    assert await save_profile_photo(target.id, JPEG_BYTES, actor=target) is not None
+    assert await save_profile_photo(target.id, JPEG_BYTES, actor=admin) is not None
+    assert await remove_profile_photo(target.id, actor=admin) is True

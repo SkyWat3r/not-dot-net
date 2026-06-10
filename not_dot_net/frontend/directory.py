@@ -78,8 +78,10 @@ async def _update_user(user_id, updates: dict, actor_email: str | None = None):
                 await manager.update(update_schema, user, actor_email=actor_email)
 
 
-async def _delete_user(user_id):
+async def _delete_user(user_id, actor=None):
     """Delete a user via UserManager (respects FastAPI-Users hooks)."""
+    if actor is not None and not await has_permissions(actor, "manage_users"):
+        raise PermissionError("manage_users required to delete users")
     async with session_scope() as session:
         async with asynccontextmanager(get_user_db)(session) as user_db:
             async with asynccontextmanager(get_user_manager)(user_db) as manager:
@@ -260,7 +262,11 @@ async def _render_detail(container, person: User, current_user: User, state: dic
 
                     async def do_delete():
                         confirm_dialog.close()
-                        await _delete_user(person.id)
+                        try:
+                            await _delete_user(person.id, actor=current_user)
+                        except PermissionError:
+                            ui.notify(t("access_denied"), color="negative")
+                            return
                         ui.notify(t("deleted", name=display), color="positive")
                         container.parent_slot.parent.set_visibility(False)
 
@@ -493,7 +499,11 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
                     else:
                         ui.notify(t(error), color="negative")
                     return
-                saved_photo = await save_profile_photo(person.id, content)
+                try:
+                    saved_photo = await save_profile_photo(person.id, content, actor=current_user)
+                except PermissionError:
+                    ui.notify(t("access_denied"), color="negative")
+                    return
                 if saved_photo is None:
                     ui.notify(t("profile_photo_upload_failed"), color="negative")
                     return
@@ -518,7 +528,12 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
 
             if person.photo:
                 async def do_remove_photo():
-                    if not await remove_profile_photo(person.id):
+                    try:
+                        removed = await remove_profile_photo(person.id, actor=current_user)
+                    except PermissionError:
+                        ui.notify(t("access_denied"), color="negative")
+                        return
+                    if not removed:
                         ui.notify(t("profile_photo_upload_failed"), color="negative")
                         return
                     await log_audit(

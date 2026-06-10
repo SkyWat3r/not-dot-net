@@ -68,3 +68,29 @@ async def test_invalid_token_rejected_by_save_draft():
     import pytest
     with pytest.raises(PermissionError):
         await save_draft(req.id, data={"phone": "x"}, actor_token=str(uuid.uuid4()))
+
+
+async def test_token_cannot_inject_unknown_data_keys():
+    """R-11: a token holder must only be able to set the current step's
+    declared fields — not arbitrary keys like returning_user_id (which
+    decides whose tenure record is created on completion)."""
+    from not_dot_net.backend.workflow_service import get_request_by_id
+
+    req, token = await _start_onboarding_to_newcomer()
+
+    await save_draft(
+        req.id,
+        data={"phone": "+33 1 23 45 67 89", "returning_user_id": "evil-draft"},
+        actor_token=token,
+    )
+    fresh = await get_request_by_id(req.id)
+    assert fresh.data.get("phone") == "+33 1 23 45 67 89"
+    assert "returning_user_id" not in fresh.data
+
+    submitted = await submit_step(
+        req.id, None, "submit",
+        data={"first_name": "A", "last_name": "B", "returning_user_id": "evil-submit"},
+        actor_token=token,
+    )
+    assert submitted.data.get("first_name") == "A"
+    assert "returning_user_id" not in submitted.data

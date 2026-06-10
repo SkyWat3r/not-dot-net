@@ -6,6 +6,7 @@ from pathlib import PurePosixPath
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from not_dot_net.backend.db import User, session_scope
+from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.config import DEFAULT_PROFILE_PHOTO_MAX_SIZE_MB, files_config
 
 
@@ -92,7 +93,16 @@ async def validate_profile_photo_upload(content: bytes, filename: str) -> str | 
     return validate_profile_photo(content, filename, cfg.profile_photo_max_size_mb)
 
 
-async def save_profile_photo(user_id: uuid.UUID, content: bytes) -> bytes | None:
+async def _check_photo_actor(user_id: uuid.UUID, actor) -> None:
+    """Only the user themselves or someone with manage_users may change a photo."""
+    if actor is None or actor.id == user_id:
+        return
+    if not await has_permissions(actor, "manage_users"):
+        raise PermissionError("Cannot modify another user's photo")
+
+
+async def save_profile_photo(user_id: uuid.UUID, content: bytes, actor=None) -> bytes | None:
+    await _check_photo_actor(user_id, actor)
     processed = process_profile_photo(content)
     if processed is None:
         return None
@@ -106,7 +116,8 @@ async def save_profile_photo(user_id: uuid.UUID, content: bytes) -> bytes | None
     return processed
 
 
-async def remove_profile_photo(user_id: uuid.UUID) -> bool:
+async def remove_profile_photo(user_id: uuid.UUID, actor=None) -> bool:
+    await _check_photo_actor(user_id, actor)
     async with session_scope() as session:
         user = await session.get(User, user_id)
         if user is None:

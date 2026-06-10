@@ -726,6 +726,9 @@ def _show_software_dialog(outer_container, user):
                 ui.button(t("cancel"), on_click=dialog.close).props("flat")
 
                 async def do_save():
+                    if not await has_permissions(user, "manage_bookings"):
+                        ui.notify(t("access_denied"), color="negative")
+                        return
                     bc = await bookings_config.get()
                     await bookings_config.set(bc.model_copy(update={
                         "os_choices": state["os_list"],
