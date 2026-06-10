@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 
 import aiosmtplib
-from sqlalchemy import Index, String, Text, func, select
+from sqlalchemy import Index, String, Text, delete, func, select
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
 from not_dot_net.backend.db import Base, session_scope
@@ -30,6 +30,8 @@ BACKOFF = [
 MAX_ATTEMPTS = 7
 BATCH_SIZE = 50
 POLL_CEILING_S = 60
+SENT_RETENTION = timedelta(days=30)
+PURGE_INTERVAL_S = 3600.0
 
 
 class MailOutbox(MappedAsDataclass, Base, kw_only=True):
@@ -159,11 +161,37 @@ async def _drain_outbox_once() -> int:
     return processed
 
 
+async def purge_sent_rows(retention: timedelta = SENT_RETENTION) -> int:
+    """Delete delivered rows older than `retention`.
+
+    Sent bodies can contain sensitive content (token links, codes); there
+    is no reason to keep them once delivered. Returns rows deleted.
+    """
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - retention
+    async with session_scope() as session:
+        result = await session.execute(
+            delete(MailOutbox).where(
+                MailOutbox.sent_at.is_not(None),
+                MailOutbox.sent_at < cutoff,
+            )
+        )
+        await session.commit()
+        return result.rowcount or 0
+
+
 async def run_outbox_worker() -> None:
     """Forever: drain pending rows, sleep until the next one is due (≤ 60s)."""
+    import time
+
+    last_purge = 0.0
     while True:
         try:
             await _drain_outbox_once()
+            if time.monotonic() - last_purge > PURGE_INTERVAL_S:
+                purged = await purge_sent_rows()
+                if purged:
+                    logger.info("Purged %d delivered outbox row(s)", purged)
+                last_purge = time.monotonic()
         except asyncio.CancelledError:
             raise
         except Exception:

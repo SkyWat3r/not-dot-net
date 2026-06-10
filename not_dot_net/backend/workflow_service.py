@@ -1097,8 +1097,7 @@ async def _handle_ad_account_creation(
         subject, body = render_email(
             "account_created",
             workflow_label=workflow_label,
-            sam=sam, initial_password=initial_password,
-            display_name=display_name, mail=new_user.mail,
+            sam=sam, display_name=display_name, mail=new_user.mail,
         )
         await send_mail(contact_email, subject, body)
 

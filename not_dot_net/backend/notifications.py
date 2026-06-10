@@ -47,17 +47,20 @@ TEMPLATES = {
         "body": "<p>Your <strong>{workflow_label}</strong> onboarding is now complete. "
                 "Your account has been created.</p>",
     },
+    # The initial password is deliberately NOT in this email — the operator
+    # hands it over via the one-time copy dialog. Emailing it would also
+    # persist it in the mail_outbox table.
     "account_created": {
         "subject": "{workflow_label}: your AD account is ready",
         "body": (
             "<p>Hello {display_name},</p>"
-            "<p>Your account has been created. You can now log in with:</p>"
+            "<p>Your account has been created:</p>"
             "<ul>"
             "<li><strong>Login:</strong> {sam}</li>"
-            "<li><strong>Initial password:</strong> {initial_password}</li>"
             "<li><strong>Email:</strong> {mail}</li>"
             "</ul>"
-            "<p>You will be asked to change this password on first login.</p>"
+            "<p>Your administrator will give you your initial password; "
+            "you will be asked to change it on first login.</p>"
         ),
     },
 }

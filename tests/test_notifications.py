@@ -375,3 +375,17 @@ async def test_request_corrections_includes_token_link():
     _, _, body = sent_emails[0]
     assert token in body, "Token link must appear in the corrections email body"
     assert "visit the link you received previously" not in body
+
+
+def test_account_created_email_contains_no_password():
+    """R-08: the temp password is handed over by the operator via the copy
+    dialog — it must never be emailed (and thus persisted in mail_outbox)."""
+    from not_dot_net.backend.notifications import render_email
+
+    subject, body = render_email(
+        "account_created", "Onboarding",
+        sam="doej", display_name="Jane Doe", mail="jane@lpp.fr",
+    )
+    assert "doej" in body
+    assert "{initial_password}" not in body
+    assert "Initial password" not in body

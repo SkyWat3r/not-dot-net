@@ -414,3 +414,30 @@ async def test_send_test_mail_propagates_smtp_failures():
     ):
         with pytest.raises(ConnectionRefusedError):
             await send_test_mail("admin@test.local")
+
+
+async def test_purge_sent_rows_deletes_only_old_delivered_mail():
+    """R-08: delivered bodies (tokens, links) must not pile up forever."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from not_dot_net.backend.db import session_scope
+    from not_dot_net.backend.mail_outbox import MailOutbox, purge_sent_rows
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with session_scope() as session:
+        session.add(MailOutbox(to_address="old@test", subject="old", body_html="x",
+                               next_attempt_at=now, sent_at=now - timedelta(days=31)))
+        session.add(MailOutbox(to_address="recent@test", subject="recent", body_html="x",
+                               next_attempt_at=now, sent_at=now - timedelta(days=1)))
+        session.add(MailOutbox(to_address="pending@test", subject="pending", body_html="x",
+                               next_attempt_at=now))
+        await session.commit()
+
+    deleted = await purge_sent_rows()
+
+    assert deleted == 1
+    async with session_scope() as session:
+        remaining = (await session.execute(select(MailOutbox.to_address))).scalars().all()
+    assert sorted(remaining) == ["pending@test", "recent@test"]
