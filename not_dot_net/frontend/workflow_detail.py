@@ -1,5 +1,6 @@
 """Request detail page — timeline-centered view with action panel."""
 
+import logging
 import uuid
 from typing import Optional
 
@@ -29,6 +30,8 @@ from not_dot_net.frontend.workflow_step import (
     render_step_progress,
     render_urgency_badge,
 )
+
+_log = logging.getLogger(__name__)
 
 
 def setup():
@@ -90,7 +93,9 @@ def setup():
                 f.name: t(f.label) if f.label else f.name
                 for step in wf.steps for f in step.fields
             }
-            _render_timeline(events, actor_names, files_by_step, user, field_labels)
+            if any(files_by_step.values()):
+                _render_files_section(files_by_step, field_labels, user)
+            _render_timeline(events, actor_names, field_labels)
 
             if step_config and req.status == "in_progress":
                 can_act = await can_user_act(user, req, wf)
@@ -191,7 +196,7 @@ def _render_header(req, wf, age_days, dash_cfg, actor_names, user):
                 )
 
 
-def _render_timeline(events, actor_names, files_by_step, user, field_labels):
+def _render_timeline(events, actor_names, field_labels):
     with ui.element("div").classes("relative ml-2 pl-5").style(
         "border-left: 2px solid #e0e0e0"
     ):
@@ -225,41 +230,61 @@ def _render_timeline(events, actor_names, files_by_step, user, field_labels):
                                 label = field_labels.get(k, k)
                                 ui.label(f"{label}: {v}").classes("text-xs text-grey-8")
 
-                step_files = files_by_step.get(ev.step_key, [])
-                if step_files and ev.action in ("submit", "save_draft"):
-                    for f in step_files:
-                        field_label = field_labels.get(f.field_name, f.field_name)
-                        if f.encrypted_file_id:
-                            async def download_encrypted(fid=f.encrypted_file_id, fname=f.filename):
-                                from not_dot_net.backend.permissions import has_permissions
-                                if not await has_permissions(user, "access_personal_data"):
-                                    ui.notify(t("access_denied"), color="negative")
-                                    return
-                                from not_dot_net.backend.encrypted_storage import read_encrypted
-                                data, name, ctype = await read_encrypted(
-                                    fid, actor_id=user.id, actor_email=user.email,
-                                )
-                                ui.download(data, name)
-                            with ui.row().classes("items-center gap-1"):
-                                ui.label(f"{field_label}:").classes("text-xs text-grey-8")
-                                ui.button(
-                                    f"📎 {f.filename}", on_click=download_encrypted,
-                                ).props("flat dense size=sm")
-                        else:
-                            async def download_plain(fp=f.storage_path, fname=f.filename):
-                                from not_dot_net.backend.workflow_service import _safe_upload_path
-                                try:
-                                    path = _safe_upload_path(fp)
-                                except ValueError:
-                                    ui.notify(t("access_denied"), color="negative")
-                                    return
-                                if path.exists():
-                                    ui.download(path.read_bytes(), fname)
-                            with ui.row().classes("items-center gap-1"):
-                                ui.label(f"{field_label}:").classes("text-xs text-grey-8")
-                                ui.button(
-                                    f"📎 {f.filename}", on_click=download_plain,
-                                ).props("flat dense size=sm")
+
+def _render_file_download(f, field_label, user):
+    if f.encrypted_file_id:
+        async def download(fid=f.encrypted_file_id):
+            from not_dot_net.backend.permissions import has_permissions
+            if not await has_permissions(user, "access_personal_data"):
+                ui.notify(t("access_denied"), color="negative")
+                return
+            from not_dot_net.backend.encrypted_storage import read_encrypted
+            try:
+                data, name, ctype = await read_encrypted(
+                    fid, actor_id=user.id, actor_email=user.email,
+                )
+            except Exception as e:
+                _log.exception("Encrypted download failed (file %s)", fid)
+                ui.notify(t("download_failed", error=str(e)), color="negative")
+                return
+            ui.download(data, name)
+    else:
+        async def download(fp=f.storage_path, fname=f.filename):
+            from not_dot_net.backend.workflow_service import _safe_upload_path
+            try:
+                path = _safe_upload_path(fp)
+            except ValueError:
+                ui.notify(t("access_denied"), color="negative")
+                return
+            if path.exists():
+                ui.download(path.read_bytes(), fname)
+            else:
+                _log.error("Workflow file missing on disk: %s", path)
+                ui.notify(
+                    t("download_failed", error=t("file_missing")),
+                    color="negative",
+                )
+    with ui.row().classes("items-center gap-1"):
+        ui.label(f"{field_label}:").classes("text-xs text-grey-8")
+        ui.button(f"📎 {f.filename}", on_click=download).props("flat dense size=sm")
+
+
+def _render_files_section(files_by_step, field_labels, user):
+    """All uploaded files for the request, independent of timeline events.
+
+    The token page persists files at upload time — before any submit or
+    save_draft event exists — so the timeline alone can miss them.
+    """
+    with ui.card().classes("w-full q-pa-md mb-4").style(
+        "background: #f8f9fa; border: 1px solid #e0e0e0;"
+    ):
+        ui.label(t("uploaded_files")).classes(
+            "text-xs text-grey uppercase tracking-wide mb-2"
+        )
+        for step_files in files_by_step.values():
+            for f in step_files:
+                field_label = field_labels.get(f.field_name, f.field_name)
+                _render_file_download(f, field_label, user)
 
 
 async def _render_action_panel(container, user, req, step_config, wf, request_id_str):
