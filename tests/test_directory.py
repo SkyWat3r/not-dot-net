@@ -1,13 +1,10 @@
-import asyncio
 from contextlib import asynccontextmanager
 
 from nicegui.testing import User
 
 from not_dot_net.backend.db import session_scope, get_user_db
-from not_dot_net.backend.migrate import stamp_head
 from not_dot_net.backend.schemas import UserCreate
 from not_dot_net.backend.users import get_user_manager, get_jwt_strategy
-from not_dot_net.app import DEV_DB_URL
 
 
 async def _create_user_and_token(email: str, password: str) -> str:
@@ -23,10 +20,10 @@ async def _create_user_and_token(email: str, password: str) -> str:
 
 
 async def test_directory_shows_search(user: User) -> None:
-    stamp_head(DEV_DB_URL)
+    # NOTE: this test used to stamp_head(DEV_DB_URL) — writing alembic_version
+    # to the developer's real dev.db on every run, which made `migrate` a
+    # no-op there while the schema stayed stale. Never touch dev.db in tests.
     await user.open("/login")
-    # Wait for startup tasks (DB creation, admin seeding) to complete
-    await asyncio.sleep(0.5)
     token = await _create_user_and_token("admin@not-dot-net.dev", "admin")
     user.http_client.cookies.set("fastapiusersauth", token)
     await user.open("/")
