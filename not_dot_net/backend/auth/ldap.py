@@ -643,19 +643,8 @@ class SyncResult:
             self.errors = []
 
 
-async def sync_all_from_ldap(
-    bind_username: str,
-    bind_password: str,
-) -> SyncResult:
-    """Search AD for all users and sync/provision them locally.
-
-    Returns counts of synced, provisioned, and skipped entries.
-    """
-    from not_dot_net.backend.db import User, AuthMethod, session_scope
-    from not_dot_net.backend.roles import roles_config
-    from sqlalchemy import select
-
-    cfg = await ldap_config.get()
+def _search_all_user_entries(cfg: LdapConfig, bind_username: str, bind_password: str) -> list:
+    """Bind and paged-search every AD user entry. Synchronous (ldap3)."""
     conn = _ldap_bind(bind_username, bind_password, cfg, _ldap_connect)
 
     search_filter = cfg.user_filter or "(&(objectCategory=person)(objectClass=user))"
@@ -685,6 +674,27 @@ async def sync_all_from_ldap(
         cookie = conn.result.get("controls", {}).get("1.2.840.113556.1.4.319", {}).get("value", {}).get("cookie")
 
     conn.unbind()
+    return entries
+
+
+async def sync_all_from_ldap(
+    bind_username: str,
+    bind_password: str,
+) -> SyncResult:
+    """Search AD for all users and sync/provision them locally.
+
+    Returns counts of synced, provisioned, and skipped entries.
+    """
+    from not_dot_net.backend.db import User, AuthMethod, session_scope
+    from not_dot_net.backend.roles import roles_config
+    from sqlalchemy import select
+
+    cfg = await ldap_config.get()
+    # ldap3 is synchronous — keep the (potentially long) bulk search off the
+    # event loop so the rest of the UI stays responsive.
+    entries = await asyncio.to_thread(
+        _search_all_user_entries, cfg, bind_username, bind_password,
+    )
 
     async with session_scope() as session:
         existing = await session.execute(select(User))

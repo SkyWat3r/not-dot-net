@@ -107,7 +107,10 @@ class _GroupOpHandler(BaseEffectHandler):
         bind_user, bind_pw = ad_creds
         cfg = await ldap_config.get()
         try:
-            failures = self._call_op(target_dn, groups, bind_user, bind_pw, cfg)
+            import asyncio
+            failures = await asyncio.to_thread(
+                self._call_op, target_dn, groups, bind_user, bind_pw, cfg,
+            )
         except LdapModifyError as e:
             return EffectResult(kind=self.kind, succeeded=False,
                                 detail={"target_dn": target_dn, "groups": groups},
@@ -146,7 +149,10 @@ class _EnableHandler(BaseEffectHandler):
         cfg = await ldap_config.get()
         bind_user, bind_pw = ad_creds
         try:
-            _ldap_set_account_enabled(target_dn, self.enable, bind_user, bind_pw, cfg)
+            import asyncio
+            await asyncio.to_thread(
+                _ldap_set_account_enabled, target_dn, self.enable, bind_user, bind_pw, cfg,
+            )
         except LdapModifyError as e:
             return EffectResult(kind=self.kind, succeeded=False,
                                 detail={"target_dn": target_dn},

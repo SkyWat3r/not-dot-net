@@ -4,7 +4,6 @@ import uuid
 from datetime import date, timedelta
 
 from nicegui import ui
-from sqlalchemy import select
 
 from not_dot_net.backend.booking_service import (
     BookingConflictError,
@@ -19,7 +18,7 @@ from not_dot_net.backend.booking_service import (
     update_resource,
 )
 from not_dot_net.config import bookings_config
-from not_dot_net.backend.db import User, session_scope
+from not_dot_net.backend.db import User, resolve_user_names
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.config import org_config
 from not_dot_net.frontend.i18n import t
@@ -79,12 +78,6 @@ def render(user: User):
         await _render_bookings(container, user)
 
     ui.timer(0, refresh, once=True)
-
-
-async def _get_user_name(user_id: uuid.UUID) -> str:
-    async with session_scope() as session:
-        u = await session.get(User, user_id)
-        return u.full_name or u.email if u else "?"
 
 
 async def _render_bookings(container, user: User, filter_range=None):
@@ -267,14 +260,11 @@ async def _render_resource_list(outer_container, area, resources, user, is_admin
 
     owner_labels = {}
     if conflict_bookings:
-        user_ids = {booking.user_id for booking in conflict_bookings.values()}
-        async with session_scope() as session:
-            result = await session.execute(select(User).where(User.id.in_(user_ids)))
-            users_by_id = {u.id: u for u in result.scalars().all()}
+        names = await resolve_user_names({b.user_id for b in conflict_bookings.values()})
         for resource_id, booking in conflict_bookings.items():
-            owner = users_by_id.get(booking.user_id)
-            owner_name = owner.full_name or owner.email if owner else "?"
-            owner_labels[resource_id] = _truncate_booking_owner(owner_name)
+            owner_labels[resource_id] = _truncate_booking_owner(
+                names.get(booking.user_id, "?")
+            )
 
     org = await org_config.get()
     sites = org.sites
@@ -389,9 +379,10 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
     )
 
     if bookings:
+        owner_names = await resolve_user_names([bk.user_id for bk in bookings])
         ui.label(t("bookings")).classes("text-subtitle2 mt-2 mb-1")
         for bk in bookings:
-            owner_name = await _get_user_name(bk.user_id)
+            owner_name = owner_names.get(bk.user_id, "?")
             is_own = bk.user_id == user.id
             with ui.row().classes("items-center gap-2 w-full flex-wrap"):
                 ui.label(

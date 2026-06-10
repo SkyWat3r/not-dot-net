@@ -321,7 +321,7 @@ async def test_cancel_own_booking():
     start = _valid_start()
     end = start + timedelta(days=3)
     b = await create_booking(r.id, user.id, start, end)
-    await cancel_booking(b.id, user.id)
+    await cancel_booking(b.id, actor=user)
     assert len(await list_bookings_for_resource(r.id)) == 0
 
 
@@ -332,23 +332,24 @@ async def test_cancel_other_user_booking_rejected():
     start = _valid_start()
     b = await create_booking(r.id, user1.id, start, start + timedelta(days=3))
     with pytest.raises(PermissionError):
-        await cancel_booking(b.id, user2.id)
+        await cancel_booking(b.id, actor=user2)
 
 
 async def test_cancel_as_admin():
+    await _setup_roles()
     user1 = await _create_user(email="u1@test.com")
     admin = await _create_user(email="admin@test.com", role="admin")
     r = await _create_test_resource()
     start = _valid_start()
     b = await create_booking(r.id, user1.id, start, start + timedelta(days=3))
-    await cancel_booking(b.id, admin.id, is_admin=True)
+    await cancel_booking(b.id, actor=admin)
     assert len(await list_bookings_for_resource(r.id)) == 0
 
 
 async def test_cancel_nonexistent_booking():
     user = await _create_user()
     with pytest.raises(ValueError, match="not found"):
-        await cancel_booking(uuid.uuid4(), user.id)
+        await cancel_booking(uuid.uuid4(), actor=user)
 
 
 # --- OS/software ---

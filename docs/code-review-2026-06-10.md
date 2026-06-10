@@ -115,3 +115,24 @@ mostly fixed. Issue numbers below are referenced by the fix commits.
 - New-request returning-person flow end to end (R-02).
 - Reminder scheduling semantics across restarts (R-04); retention job (R-05).
 - B-T3 (CSRF) resolves itself when the dead middleware is deleted (R-09).
+
+## Fix status (2026-06-10)
+
+All items fixed in the commit series following this review, each with a
+reproducer test, except:
+
+- **R-19** (photo processed twice per upload) — deliberately skipped: a
+  one-off re-encode of a ≤2 MB image per upload is negligible, and avoiding
+  it would force an awkward validate/save API split (KISS).
+- **R-18** applied to bulk operations only (AD bulk sync, UID seeding,
+  account creation, step effects). Per-login LDAP auth and single-attribute
+  directory writes stay on the event loop: they are fast, and the cached
+  per-user connections are not thread-safe to share.
+- **R-03** resolved by removing `start_role` (never enforced; enforcing it
+  retroactively would have locked existing deployments' persisted
+  `start_role: staff` rows to staff-only visibility).
+
+Bonus finding while reproducing R-02: NiceGUI user-fixture tests ran
+against ./dev.db (app main() rebound the engine after the conftest
+installed the in-memory one). Fixed in conftest; reproducer in
+tests/test_db_isolation.py.

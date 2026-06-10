@@ -203,20 +203,16 @@ async def create_booking(
     return booking
 
 
-async def cancel_booking(booking_id: uuid.UUID, user_id: uuid.UUID | None = None,
-                         is_admin: bool = False, actor=None) -> None:
+async def cancel_booking(booking_id: uuid.UUID, actor=None) -> None:
     async with session_scope() as session:
         booking = await session.get(Booking, booking_id)
         if booking is None:
             raise ValueError("Booking not found")
 
-        if actor is not None:
-            is_owner = booking.user_id == actor.id
-            is_manager = await has_permissions(actor, MANAGE_BOOKINGS)
-            if not is_owner and not is_manager:
-                raise PermissionError("Can only cancel your own bookings")
-            user_id = actor.id
-        elif not is_admin and booking.user_id != user_id:
+        if actor is None:
+            raise PermissionError("No actor provided")
+        is_owner = booking.user_id == actor.id
+        if not is_owner and not await has_permissions(actor, MANAGE_BOOKINGS):
             raise PermissionError("Can only cancel your own bookings")
 
         resource_id = booking.resource_id
@@ -226,7 +222,7 @@ async def cancel_booking(booking_id: uuid.UUID, user_id: uuid.UUID | None = None
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "booking", "cancel",
-        actor_id=user_id,
+        actor_id=actor.id,
         target_type="resource", target_id=resource_id,
         detail=f"booking={booking_id}",
     )

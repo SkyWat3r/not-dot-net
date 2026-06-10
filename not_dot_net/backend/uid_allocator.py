@@ -146,7 +146,8 @@ async def seed_from_ad(bind_username: str, bind_password: str) -> SeedResult:
     ldap_cfg = await ldap_config.get()
     _ = await ad_account_config.get()  # ensure section materialized
 
-    entries = _search_ad_uids(ldap_cfg, bind_username, bind_password)
+    import asyncio
+    entries = await asyncio.to_thread(_search_ad_uids, ldap_cfg, bind_username, bind_password)
     seeded = 0
     skipped = 0
     async with session_scope() as session:

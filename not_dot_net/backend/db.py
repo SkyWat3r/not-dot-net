@@ -5,7 +5,7 @@ from enum import Enum as PyEnum
 
 from fastapi import Depends
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID, SQLAlchemyUserDatabase
-from sqlalchemy import Date, DateTime, Enum as SAEnum, JSON, LargeBinary, String
+from sqlalchemy import Date, DateTime, Enum as SAEnum, JSON, LargeBinary, String, select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -98,3 +98,15 @@ async def get_user_db(
     session: AsyncSession = Depends(get_async_session),
 ) -> AsyncGenerator[SQLAlchemyUserDatabase, None]:
     yield SQLAlchemyUserDatabase(session, User)
+
+
+async def resolve_user_names(user_ids) -> dict:
+    """Resolve user ids to display names (full_name or email) in one query."""
+    unique_ids = {uid for uid in user_ids if uid is not None}
+    if not unique_ids:
+        return {}
+    async with session_scope() as session:
+        result = await session.execute(
+            select(User.id, User.full_name, User.email).where(User.id.in_(unique_ids))
+        )
+        return {row.id: row.full_name or row.email for row in result.all()}
