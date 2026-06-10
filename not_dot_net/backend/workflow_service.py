@@ -506,6 +506,12 @@ async def submit_step(
                 f"Action '{action}' is not allowed on step '{req.current_step}'"
             )
 
+        # Effects needing AD credentials must fail before any state change —
+        # the frontend prompts for credentials and retries this same call.
+        if getattr(step_cfg, "effects", None):
+            from not_dot_net.backend.workflow_effects import ensure_effect_credentials
+            ensure_effect_credentials(step_cfg, action, ad_creds)
+
         next_step, new_status = compute_next_step(wf, req.current_step, action)
 
         # Handle ad_account_creation step type before the standard transition

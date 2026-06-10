@@ -165,3 +165,67 @@ async def test_run_effects_no_matching_returns_empty():
         ad_creds=("a", "p"), actor=MagicMock(),
     )
     assert results == []
+
+
+# --- R-01: missing creds must abort BEFORE the step transition is committed ---
+
+
+async def _r01_setup_users():
+    """Create a staff requester and a director approver with real roles."""
+    import uuid as _uuid
+    from not_dot_net.backend.db import User, session_scope
+    from not_dot_net.backend.roles import RoleDefinition, roles_config
+
+    cfg = await roles_config.get()
+    cfg.roles["staff"] = RoleDefinition(label="Staff", permissions=["create_workflows"])
+    cfg.roles["director"] = RoleDefinition(
+        label="Director", permissions=["create_workflows", "approve_workflows"],
+    )
+    await roles_config.set(cfg)
+
+    async with session_scope() as session:
+        staff = User(id=_uuid.uuid4(), email="r01-staff@test.com", hashed_password="x", role="staff")
+        director = User(id=_uuid.uuid4(), email="r01-director@test.com", hashed_password="x", role="director")
+        session.add(staff)
+        session.add(director)
+        await session.commit()
+        await session.refresh(staff)
+        await session.refresh(director)
+        return staff, director
+
+
+@pytest.mark.asyncio
+async def test_submit_step_without_creds_leaves_request_untouched():
+    """The frontend prompts for AD credentials and RETRIES the same submit_step
+    call. That only works if the no-creds attempt changed nothing."""
+    from not_dot_net.backend.workflow_effects import AdCredentialsRequired
+    from not_dot_net.backend.workflow_service import (
+        create_request, get_request_by_id, list_events, submit_step,
+    )
+
+    staff, director = await _r01_setup_users()
+    req = await create_request(
+        workflow_type="vpn_access",  # default approval step has an ad_add_to_groups effect
+        created_by=staff.id,
+        data={"target_name": "Alice", "target_email": "alice@test.com"},
+    )
+    req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
+    assert req.current_step == "approval"
+
+    with pytest.raises(AdCredentialsRequired):
+        await submit_step(req.id, director.id, "approve", data={}, actor_user=director)
+
+    fresh = await get_request_by_id(req.id)
+    assert fresh.status == "in_progress"
+    assert fresh.current_step == "approval"
+    actions = [ev.action for ev in await list_events(req.id)]
+    assert actions == ["create", "submit"]
+
+    # The retry with credentials must then succeed exactly once.
+    retried = await submit_step(
+        req.id, director.id, "approve", data={}, actor_user=director,
+        ad_creds=("admin", "pw"),
+    )
+    assert retried.status == "completed"
+    actions = [ev.action for ev in await list_events(req.id)]
+    assert actions == ["create", "submit", "approve"]

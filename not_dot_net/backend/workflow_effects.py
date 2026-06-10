@@ -23,6 +23,24 @@ class AdCredentialsRequired(Exception):
     """Raised by submit_step if effects need AD admin credentials and none were provided."""
 
 
+def ensure_effect_credentials(step, action: str, ad_creds: tuple[str, str] | None) -> None:
+    """Raise AdCredentialsRequired if effects matching `action` need AD creds.
+
+    submit_step calls this BEFORE committing the step transition: the frontend
+    catches the exception, prompts for credentials, and retries the same call —
+    which only works if the no-creds attempt changed nothing.
+    """
+    matching = [e for e in (getattr(step, "effects", None) or []) if e.on_action == action]
+    needs_creds = any(
+        EFFECT_REGISTRY.get(e.kind) and EFFECT_REGISTRY[e.kind].requires_ad_credentials
+        for e in matching
+    )
+    if needs_creds and not ad_creds:
+        raise AdCredentialsRequired(
+            f"Step '{getattr(step, 'key', '?')}' action '{action}' requires AD admin credentials"
+        )
+
+
 @dataclass(frozen=True)
 class EffectResult:
     kind: str
@@ -175,11 +193,7 @@ async def run_effects(
     matching = [e for e in (getattr(step, "effects", None) or []) if e.on_action == action]
     if not matching:
         return []
-    if any(EFFECT_REGISTRY.get(e.kind) and EFFECT_REGISTRY[e.kind].requires_ad_credentials for e in matching):
-        if not ad_creds:
-            raise AdCredentialsRequired(
-                f"Step '{getattr(step, 'key', '?')}' action '{action}' requires AD admin credentials"
-            )
+    ensure_effect_credentials(step, action, ad_creds)
 
     results: list[EffectResult] = []
     for effect in matching:
