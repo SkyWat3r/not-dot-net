@@ -132,7 +132,20 @@ reproducer test, except:
   retroactively would have locked existing deployments' persisted
   `start_role: staff` rows to staff-only visibility).
 
-Bonus finding while reproducing R-02: NiceGUI user-fixture tests ran
-against ./dev.db (app main() rebound the engine after the conftest
-installed the in-memory one). Fixed in conftest; reproducer in
-tests/test_db_isolation.py.
+Bonus findings while reproducing R-02 and stabilizing the suite:
+
+- NiceGUI user-fixture tests ran against ./dev.db (app main() rebound the
+  engine after the conftest installed the in-memory one). Several page
+  tests only passed because of dev.db's contents.
+- The app's dev startup (create_all, default-admin seeding, outbox worker)
+  runs as NiceGUI background tasks; under tests these raced test bodies and
+  teardown (refresh on a disposed engine, concurrent commits on the shared
+  in-memory connection), causing intermittent batches of test errors.
+
+Both fixed in tests/conftest.py (user-fixture-only monkeypatches);
+reproducers in tests/test_db_isolation.py. Full suite: 829 passed, three
+consecutive clean runs, ~3x faster (40s vs 110s).
+
+Schema safety: ORM metadata at HEAD is byte-identical to the pre-review
+baseline (verified by create_all schema diff) — no Alembic migration
+needed for this series.

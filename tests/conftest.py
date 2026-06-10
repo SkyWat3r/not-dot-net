@@ -27,7 +27,7 @@ async def mock_ad_effects(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-async def setup_db(monkeypatch):
+async def setup_db(request, monkeypatch):
     """Set up an in-memory SQLite DB and dev secrets for each test."""
     init_user_secrets(AppSecrets(jwt_secret="test-secret-that-is-long-enough-for-hs256", storage_secret="test-storage", file_encryption_key="test-file-encryption-key-32bytes!"))
 
@@ -38,13 +38,37 @@ async def setup_db(monkeypatch):
     db_module._engine = engine
     db_module._async_session_maker = session_maker
 
-    # The NiceGUI user fixture executes not_dot_net/app.py main(), whose
-    # init_db() would rebind the engine to ./dev.db mid-test — every
-    # user-fixture test would then silently read/write the developer's
-    # database. app.py imports init_db by name, so patch both references.
-    import not_dot_net.app as app_module
-    monkeypatch.setattr(db_module, "init_db", lambda url: None)
-    monkeypatch.setattr(app_module, "init_db", lambda url: None)
+    # The NiceGUI user fixture executes not_dot_net/app.py main(): its
+    # init_db() would rebind the engine to ./dev.db mid-test, and its dev
+    # startup work (create_all, default-admin seeding, outbox worker) runs
+    # as NiceGUI background tasks racing the test body and teardown
+    # (refresh on a disposed engine, concurrent commits on the shared
+    # in-memory SQLite connection). Patch it all out — but only for tests
+    # that use the user fixture; other tests call these functions directly
+    # and need the real ones. The user fixture runs app.py via runpy
+    # (__mp_main__), which re-imports names at exec time, so the patches
+    # must go on the SOURCE modules.
+    if "user" in request.fixturenames:
+        import not_dot_net.app as app_module
+        import not_dot_net.backend.mail_outbox as mail_outbox_module
+        import not_dot_net.backend.users as users_module
+
+        async def _noop_create_tables():
+            return None
+
+        async def _noop_default_admin(email, password):
+            return None
+
+        async def _noop_worker():
+            return None
+
+        monkeypatch.setattr(db_module, "init_db", lambda url: None)
+        monkeypatch.setattr(app_module, "init_db", lambda url: None)
+        monkeypatch.setattr(db_module, "create_db_and_tables", _noop_create_tables)
+        monkeypatch.setattr(app_module, "create_db_and_tables", _noop_create_tables)
+        monkeypatch.setattr(users_module, "ensure_default_admin", _noop_default_admin)
+        monkeypatch.setattr(app_module, "ensure_default_admin", _noop_default_admin)
+        monkeypatch.setattr(mail_outbox_module, "run_outbox_worker", _noop_worker)
 
     import not_dot_net.backend.workflow_models  # noqa: F401
     import not_dot_net.backend.booking_models  # noqa: F401
