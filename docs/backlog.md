@@ -53,7 +53,11 @@ Findings from full codebase review (2026-04-11). Ordered by severity within each
 - Local login checks `is_active`; LDAP does not. Disabled users with valid LDAP credentials get a working JWT.
 - **Fix:** Add `if not user or not user.is_active:` guard.
 
-### B-09: CSRF skip prefix too broad
+### ~~B-09: CSRF skip prefix too broad~~ — RESOLVED 2026-06-10 (R-09)
+`backend/csrf.py` deleted: it was never wired into the app (disabled March 2026
+for NiceGUI ASGI compat). See docs/code-review-2026-06-10.md R-09.
+
+### B-09 (original): CSRF skip prefix too broad
 - **File:** `backend/csrf.py:15`
 - `/auth/` prefix exempts cookie login endpoint from CSRF protection.
 - **Fix:** Narrow to `/auth/jwt/`, `/auth/local`, `/auth/ldap` only.
@@ -209,7 +213,9 @@ Findings from full codebase review (2026-04-11). Ordered by severity within each
 ### B-T2: `submit_step` on completed/rejected request untested (Critical)
 - No status guard exists, no test confirms rejection.
 
-### B-T3: CSRF middleware has zero tests (Critical)
+### ~~B-T3: CSRF middleware has zero tests~~ — RESOLVED 2026-06-10 (middleware deleted, R-09)
+
+### B-T3 (original): CSRF middleware has zero tests (Critical)
 - Custom ASGI implementation with non-trivial skip/fallback logic, entirely untested.
 
 ### B-T4: Token page has zero tests (High)

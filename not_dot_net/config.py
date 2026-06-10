@@ -89,7 +89,6 @@ class OrgConfig(BaseModel):
         "ESA",
         "Autre",
     ]
-    allowed_origins: list[str] = []
 
 
 org_config = section("org", OrgConfig, label="Organization")

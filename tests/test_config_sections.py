@@ -14,7 +14,6 @@ async def test_org_config_defaults():
     assert len(cfg.sites) > 0
     assert "PhD" in cfg.employment_statuses
     assert "CNRS" in cfg.employers
-    assert isinstance(cfg.allowed_origins, list)
 
 
 async def test_org_config_roundtrip():
@@ -26,7 +25,6 @@ async def test_org_config_roundtrip():
         sites=["B"],
         employment_statuses=["Permanent"],
         employers=["Example Lab"],
-        allowed_origins=["http://x"],
     )
     await org_config.set(custom)
     result = await org_config.get()
@@ -36,7 +34,6 @@ async def test_org_config_roundtrip():
     assert result.sites == ["B"]
     assert result.employment_statuses == ["Permanent"]
     assert result.employers == ["Example Lab"]
-    assert result.allowed_origins == ["http://x"]
 
 
 async def test_org_config_registered():
@@ -352,3 +349,13 @@ async def test_ad_account_config_registered():
     from not_dot_net.backend.app_config import get_registry
     from not_dot_net.backend.ad_account_config import ad_account_config  # noqa: F401
     assert "ad_account" in get_registry()
+
+
+async def test_org_config_ignores_legacy_allowed_origins():
+    """R-09: allowed_origins was dead config (Socket.IO CORS comes from the
+    ALLOWED_ORIGINS env var; the CSRF middleware that read it was never
+    wired). Legacy persisted JSON containing it must still load."""
+    from not_dot_net.config import OrgConfig
+
+    cfg = OrgConfig.model_validate({"app_name": "X", "allowed_origins": ["http://x"]})
+    assert not hasattr(cfg, "allowed_origins")

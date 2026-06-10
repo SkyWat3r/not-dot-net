@@ -18,7 +18,7 @@ uv run pytest                                        # nicegui.testing.User plug
 - **Dev mode = absence of `DATABASE_URL`** env var, not a flag. SQLite + auto-create tables + auto-admin.
 - **Secrets auto-generated in dev** (`secrets.key`). Missing in prod → `SystemExit(1)`.
 - **No public REST API.** All FastAPI-Users routers removed. Only `/auth/login`, `/logout`, `/workflow/token/{token}`, `/workflow/request/{id}`, `/pages/{slug}` remain. No JWT endpoints.
-- **CSRF middleware exists in `backend/csrf.py` but is DISABLED** — NiceGUI ASGI compat issue, known as BACKLOG #30.
+- **No CSRF middleware.** `backend/csrf.py` was deleted (2026-06, R-09): it was never wired (NiceGUI ASGI compat) and UI actions go over Socket.IO, origin-locked in production. The only state-changing cookie endpoint is `POST /auth/login` (login CSRF — accepted risk).
 - **Side-effect imports register config sections.** `import not_dot_net.backend.auth.ldap  # noqa: F401`. Same for `ad_account_config`, `workflow_effects`. Models too: `import not_dot_net.backend.workflow_models  # noqa: F401`.
 - **`__mp_main__` guard** — `if __name__ in {"__main__", "__mp_main__"}:` for NiceGUI multiprocessing reload.
 - **Email is queued** via `mail_outbox` table, drained by background worker. Dev: only logged, not sent (`dev_catch_all`).
