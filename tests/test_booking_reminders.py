@@ -209,3 +209,41 @@ async def test_send_booking_end_reminders_ignores_inactive_users():
 
     assert queued == 0
     send.assert_not_awaited()
+
+
+async def test_send_booking_end_reminders_catches_up_missed_lead_day():
+    """R-04: if the job was not running on the exact lead day, the reminder
+    must still go out on the next run instead of being skipped forever."""
+    user = await _create_user()
+    resource = await _create_resource()
+    booking = await _create_booking(user, resource, end_offset_days=2)
+    await bookings_config.set(BookingsConfig(reminder_lead_days=[3]))
+
+    with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
+        queued = await send_booking_end_reminders(today=date(2026, 5, 26))
+
+    assert queued == 1
+    send.assert_awaited_once()
+    assert "in 2 days" in send.await_args.args[1]
+
+    async with session_scope() as session:
+        stored = await session.get(Booking, booking.id)
+        assert stored.reminder_sent_lead_days == [3]
+
+
+async def test_send_booking_end_reminders_sends_one_mail_for_multiple_missed_leads():
+    """Catching up on several missed lead days must send a single email."""
+    user = await _create_user()
+    resource = await _create_resource()
+    booking = await _create_booking(user, resource, end_offset_days=0)
+    await bookings_config.set(BookingsConfig(reminder_lead_days=[1, 7]))
+
+    with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
+        queued = await send_booking_end_reminders(today=date(2026, 5, 26))
+
+    assert queued == 1
+    send.assert_awaited_once()
+
+    async with session_scope() as session:
+        stored = await session.get(Booking, booking.id)
+        assert stored.reminder_sent_lead_days == [1, 7]

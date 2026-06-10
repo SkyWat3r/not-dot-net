@@ -307,17 +307,21 @@ async def send_booking_end_reminders(today: date | None = None) -> int:
 
         for booking, user, resource in rows:
             days_until_end = (booking.end_date - today).days
-            if days_until_end not in lead_days:
-                continue
             sent_lead_days = set(booking.reminder_sent_lead_days or [])
-            if days_until_end in sent_lead_days:
+            # Catch up on lead days the job missed (e.g. it wasn't running on
+            # the exact day) — one email covers every lead that has passed.
+            due_leads = [
+                lead for lead in lead_days
+                if days_until_end <= lead and lead not in sent_lead_days
+            ]
+            if not due_leads:
                 continue
             await send_mail(
                 user.email,
                 await _booking_reminder_subject(days_until_end),
                 render_booking_reminder_body(user=user, booking=booking, resource=resource),
             )
-            sent_lead_days.add(days_until_end)
+            sent_lead_days.update(due_leads)
             booking.reminder_sent_lead_days = sorted(sent_lead_days)
             await session.commit()
             queued += 1

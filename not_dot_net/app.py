@@ -43,6 +43,32 @@ def _lock_socketio_cors():
     logger.info("Socket.IO CORS locked to: %s", allowed or "(same-origin only)")
 
 
+def add_scheduled_jobs(scheduler) -> None:
+    """Register daily maintenance jobs.
+
+    Cron triggers, not intervals: an interval's clock resets on every pod
+    restart, so a daily-restarted deployment would never run the jobs.
+    """
+    from apscheduler.triggers.cron import CronTrigger
+    from not_dot_net.backend.booking_service import run_booking_reminder_job
+    from not_dot_net.backend.encrypted_storage import run_retention_purge_job
+
+    scheduler.add_job(
+        run_booking_reminder_job,
+        CronTrigger(hour=8, minute=0),
+        id="booking_end_reminders",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        run_retention_purge_job,
+        CronTrigger(hour=3, minute=30),
+        id="retention_purge",
+        max_instances=1,
+        coalesce=True,
+    )
+
+
 def create_app(
     secrets_file: str = "./secrets.key",
     _seed_fake_users: bool = False,
@@ -97,19 +123,11 @@ def create_app(
         logger.info("Mail outbox worker started")
 
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
-        from not_dot_net.backend.booking_service import run_booking_reminder_job
         scheduler = AsyncIOScheduler()
-        scheduler.add_job(
-            run_booking_reminder_job,
-            "interval",
-            hours=24,
-            id="booking_end_reminders",
-            max_instances=1,
-            coalesce=True,
-        )
+        add_scheduled_jobs(scheduler)
         scheduler.start()
         _scheduler["scheduler"] = scheduler
-        logger.info("Booking reminder scheduler started")
+        logger.info("Maintenance scheduler started")
 
         from not_dot_net.backend.auth.ldap import start_connection_reaper
         start_connection_reaper()

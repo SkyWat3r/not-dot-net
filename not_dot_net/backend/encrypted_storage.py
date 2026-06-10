@@ -160,6 +160,16 @@ async def mark_for_retention(file_id: uuid.UUID, days: int) -> None:
         await session.commit()
 
 
+async def run_retention_purge_job() -> None:
+    """APScheduler entrypoint for purging encrypted files past retention."""
+    try:
+        deleted = await delete_expired()
+        if deleted:
+            logger.info("Purged %d encrypted file(s) past retention", deleted)
+    except Exception:
+        logger.exception("Retention purge job failed")
+
+
 async def delete_expired() -> int:
     """Delete encrypted files past their retention date. Returns count deleted."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
