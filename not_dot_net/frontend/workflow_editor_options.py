@@ -83,6 +83,48 @@ def event_options() -> list[dict]:
     ]
 
 
+def action_options(existing: list[str] | None = None) -> list[dict]:
+    """Labeled options for the step actions picker. The engine treats reject and
+    request_corrections specially; every other action just advances — say so."""
+    from not_dot_net.frontend.i18n import t
+    out = [
+        {"value": "submit", "label": t("action_submit")},
+        {"value": "approve", "label": t("action_approve")},
+        {"value": "complete", "label": t("action_complete")},
+        {"value": "request_corrections", "label": t("action_request_corrections")},
+        {"value": "reject", "label": t("action_reject")},
+    ]
+    known = {o["value"] for o in out}
+    out.extend(
+        {"value": a, "label": f"{a} (custom)"}
+        for a in existing or [] if a not in known
+    )
+    return out
+
+
+def assignee_summary(step, roles: Mapping[str, RoleDefinition],
+                     permissions: Mapping[str, PermissionInfo]) -> str:
+    """One-line description of who handles a step.
+
+    Same precedence as workflow_engine.effective_assignee:
+    contextual assignee > permission > role.
+    """
+    from not_dot_net.frontend.i18n import t
+    if step.assignee == "target_person":
+        return t("assignee_kind_target")
+    if step.assignee == "requester":
+        return t("assignee_kind_requester")
+    if step.assignee_permission:
+        info = permissions.get(step.assignee_permission)
+        name = getattr(info, "label", None) or step.assignee_permission
+        return t("assignee_summary_permission", name=name)
+    if step.assignee_role:
+        definition = roles.get(step.assignee_role)
+        name = getattr(definition, "label", None) or step.assignee_role
+        return t("assignee_summary_role", name=name)
+    return t("assignee_none")
+
+
 def effect_kind_options() -> list[dict]:
     """Labeled options for the four AD effect kinds."""
     from not_dot_net.frontend.i18n import t

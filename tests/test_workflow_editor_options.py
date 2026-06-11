@@ -112,3 +112,32 @@ def test_display_name_to_key_prefixes_when_slug_starts_with_digit():
 def test_display_name_to_key_dedups_against_taken():
     from not_dot_net.frontend.workflow_editor_options import display_name_to_key
     assert display_name_to_key("Travel request", {"travel_request"}) == "travel_request_2"
+
+
+def test_action_options_cover_engine_actions_and_preserve_unknown():
+    from not_dot_net.frontend.workflow_editor_options import action_options
+    opts = action_options(["submit", "legacy_sign_off"])
+    values = [o["value"] for o in opts]
+    assert values[:5] == ["submit", "approve", "complete", "request_corrections", "reject"]
+    assert "legacy_sign_off" in values
+    by_value = {o["value"]: o["label"] for o in opts}
+    assert "legacy_sign_off" in by_value["legacy_sign_off"]
+
+
+def test_assignee_summary_precedence_matches_engine():
+    from types import SimpleNamespace
+    from not_dot_net.backend.roles import RoleDefinition
+    from not_dot_net.frontend.workflow_editor_options import assignee_summary
+
+    roles = {"hr": RoleDefinition(label="HR team", permissions=[])}
+    perms = {}
+
+    step = SimpleNamespace(assignee="target_person", assignee_permission="x", assignee_role="hr")
+    contextual = assignee_summary(step, roles, perms)
+    assert "HR team" not in contextual  # contextual wins over role/permission
+
+    step = SimpleNamespace(assignee=None, assignee_permission=None, assignee_role="hr")
+    assert "HR team" in assignee_summary(step, roles, perms)
+
+    step = SimpleNamespace(assignee=None, assignee_permission=None, assignee_role=None)
+    assert assignee_summary(step, roles, perms)  # non-empty "nobody yet" text

@@ -390,6 +390,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "assignee_kind_permission": "Anyone with permission",
         "assignee_kind_requester": "The person who created the request",
         "assignee_kind_target": "The person this request is about",
+        "assignee_summary_role": "Role: {name}",
+        "assignee_summary_permission": "Permission: {name}",
+        "assignee_none": "Nobody can act on this step yet",
+        "action_submit": "Submit — sends the form on to the next step",
+        "action_approve": "Approve — moves the request forward",
+        "action_complete": "Complete — moves the request forward",
+        "action_reject": "Reject — ends the request as rejected",
+        "action_request_corrections": "Request corrections — sends the request back to an earlier step",
         "save_dirty_tooltip": "You have unsaved changes",
         "step_section_effects": "Effects",
         "empty_effects": "No effects yet — click Add effect below.",
@@ -814,6 +822,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "assignee_kind_permission": "Toute personne ayant la permission",
         "assignee_kind_requester": "La personne qui a créé la demande",
         "assignee_kind_target": "La personne concernée par la demande",
+        "assignee_summary_role": "Rôle : {name}",
+        "assignee_summary_permission": "Permission : {name}",
+        "assignee_none": "Personne ne peut encore traiter cette étape",
+        "action_submit": "Soumettre — envoie le formulaire à l'étape suivante",
+        "action_approve": "Approuver — fait avancer la demande",
+        "action_complete": "Terminer — fait avancer la demande",
+        "action_reject": "Rejeter — clôt la demande comme rejetée",
+        "action_request_corrections": "Demander des corrections — renvoie la demande à une étape précédente",
         "save_dirty_tooltip": "Modifications non sauvegardées",
         "step_section_effects": "Effets",
         "empty_effects": "Aucun effet — cliquez sur Ajouter un effet ci-dessous.",
@@ -861,7 +877,10 @@ DEFAULT_LOCALE = "en"
 
 def get_locale() -> str:
     """Get current locale from user storage, or detect from browser."""
-    stored = app.storage.user.get("locale")
+    try:
+        stored = app.storage.user.get("locale")
+    except RuntimeError:
+        return DEFAULT_LOCALE
     if stored in SUPPORTED_LOCALES:
         return stored
     # Detect from Accept-Language header
