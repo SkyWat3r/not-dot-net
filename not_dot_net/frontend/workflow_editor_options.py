@@ -95,6 +95,7 @@ def effect_kind_options() -> list[dict]:
 
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
+_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 def _slugify(label: str, taken: set[str]) -> str:
@@ -117,3 +118,15 @@ def _slugify(label: str, taken: set[str]) -> str:
     while f"{base}_{n}" in taken:
         n += 1
     return f"{base}_{n}"
+
+
+def display_name_to_key(name: str, taken: set[str], *, fallback_prefix: str = "workflow") -> str:
+    """Derive a valid config key from a human display name.
+
+    `_slugify` can produce a digit-leading slug ("3D printer" -> "3d_printer"),
+    which the editor's key validator rejects — prefix with a word in that case.
+    """
+    slug = _slugify(name, taken)
+    if _KEY_RE.fullmatch(slug):
+        return slug
+    return _slugify(f"{fallback_prefix} {name}", taken)

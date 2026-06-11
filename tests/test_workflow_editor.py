@@ -1232,6 +1232,94 @@ def test_compute_warnings_flags_effect_groups_not_eligible():
     assert any("rogue" in w for w in warns)
 
 
+async def test_move_step_reorders_and_clamps(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "demo": WorkflowConfig(label="Demo", steps=[
+            WorkflowStepConfig(key="a", type="form"),
+            WorkflowStepConfig(key="b", type="form"),
+            WorkflowStepConfig(key="c", type="form"),
+        ]),
+    }))
+    captured = {}
+
+    @ui.page("/_we_move_step")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_we_move_step")
+    dlg = captured["dlg"]
+
+    dlg.move_step("demo", "b", -1)
+    assert [s.key for s in dlg.working_copy.workflows["demo"].steps] == ["b", "a", "c"]
+    dlg.move_step("demo", "b", -1)  # already first: no-op
+    assert [s.key for s in dlg.working_copy.workflows["demo"].steps] == ["b", "a", "c"]
+    dlg.move_step("demo", "c", +1)  # already last: no-op
+    assert [s.key for s in dlg.working_copy.workflows["demo"].steps] == ["b", "a", "c"]
+
+
+async def test_move_field_reorders(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "demo": WorkflowConfig(label="Demo", steps=[
+            WorkflowStepConfig(key="s1", type="form", fields=[
+                FieldConfig(name="f1", type="text"),
+                FieldConfig(name="f2", type="text"),
+            ]),
+        ]),
+    }))
+    captured = {}
+
+    @ui.page("/_we_move_field")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_we_move_field")
+    dlg = captured["dlg"]
+
+    dlg.move_field("demo", "s1", 1, -1)
+    fields = dlg.working_copy.workflows["demo"].steps[0].fields
+    assert [f.name for f in fields] == ["f2", "f1"]
+
+
+async def test_add_workflow_and_step_accept_labels(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={}))
+    captured = {}
+
+    @ui.page("/_we_labels")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_we_labels")
+    dlg = captured["dlg"]
+
+    dlg.add_workflow("travel_request", label="Travel request")
+    assert dlg.working_copy.workflows["travel_request"].label == "Travel request"
+
+    dlg.add_step("travel_request", "manager_approval", label="Manager approval")
+    step = dlg.working_copy.workflows["travel_request"].steps[0]
+    assert step.label == "Manager approval"
+
+
+async def test_duplicate_workflow_takes_new_label(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "demo": WorkflowConfig(label="Demo", steps=[]),
+    }))
+    captured = {}
+
+    @ui.page("/_we_dup_label")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_we_dup_label")
+    dlg = captured["dlg"]
+
+    dlg.duplicate_workflow("demo", "demo_copy", label="Demo (copy)")
+    assert dlg.working_copy.workflows["demo_copy"].label == "Demo (copy)"
+
+
 async def test_viewing_step_editor_does_not_assign_assignee(user: User, admin_user):
     """Rendering the step editor must not write an assignee into the model (bug:
     _render_sub_select used to auto-apply the first role on initial render)."""

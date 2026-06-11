@@ -147,11 +147,11 @@ class WorkflowEditorDialog:
 
     # --- workflow mutations ---
 
-    def add_workflow(self, key: str) -> None:
+    def add_workflow(self, key: str, label: str | None = None) -> None:
         _validate_slug(key)
         if key in self.working_copy.workflows:
             raise ValueError(f"Workflow '{key}' already exists")
-        self.working_copy.workflows[key] = WorkflowConfig(label=key, steps=[])
+        self.working_copy.workflows[key] = WorkflowConfig(label=label or key, steps=[])
         self.selected_workflow = key
         self.selected_step = None
         self._refresh_tree()
@@ -167,13 +167,15 @@ class WorkflowEditorDialog:
         self._refresh_tree()
         self._refresh_detail()
 
-    def duplicate_workflow(self, src_key: str, new_key: str) -> None:
+    def duplicate_workflow(self, src_key: str, new_key: str, label: str | None = None) -> None:
         _validate_slug(new_key)
         if new_key in self.working_copy.workflows:
             raise ValueError(f"Workflow '{new_key}' already exists")
         if src_key not in self.working_copy.workflows:
             raise ValueError(f"Workflow '{src_key}' does not exist")
         self.working_copy.workflows[new_key] = self.working_copy.workflows[src_key].model_copy(deep=True)
+        if label:
+            self.working_copy.workflows[new_key].label = label
         self.selected_workflow = new_key
         self.selected_step = None
         self._refresh_tree()
@@ -181,12 +183,12 @@ class WorkflowEditorDialog:
 
     # --- step mutations ---
 
-    def add_step(self, wf_key: str, step_key: str) -> None:
+    def add_step(self, wf_key: str, step_key: str, label: str = "") -> None:
         _validate_slug(step_key)
         wf = self.working_copy.workflows[wf_key]
         if any(s.key == step_key for s in wf.steps):
             raise ValueError(f"Step '{step_key}' already exists in workflow '{wf_key}'")
-        wf.steps.append(WorkflowStepConfig(key=step_key, type="form"))
+        wf.steps.append(WorkflowStepConfig(key=step_key, label=label, type="form"))
         self.selected_workflow = wf_key
         self.selected_step = step_key
         self._refresh_tree()
@@ -198,6 +200,16 @@ class WorkflowEditorDialog:
         if self.selected_step == step_key:
             self.selected_step = wf.steps[0].key if wf.steps else None
         self._refresh_tree()
+        self._refresh_detail()
+
+    def move_step(self, wf_key: str, step_key: str, delta: int) -> None:
+        wf = self.working_copy.workflows[wf_key]
+        keys = [s.key for s in wf.steps]
+        idx = keys.index(step_key)
+        new_idx = idx + delta
+        if not 0 <= new_idx < len(wf.steps):
+            return
+        wf.steps[idx], wf.steps[new_idx] = wf.steps[new_idx], wf.steps[idx]
         self._refresh_detail()
 
     def select(self, wf_key: str, step_key: str | None = None) -> None:
@@ -341,6 +353,14 @@ class WorkflowEditorDialog:
     def delete_field(self, wf_key: str, step_key: str, index: int) -> None:
         step = self._find_step(wf_key, step_key)
         del step.fields[index]
+        self._refresh_detail()
+
+    def move_field(self, wf_key: str, step_key: str, index: int, delta: int) -> None:
+        step = self._find_step(wf_key, step_key)
+        new_idx = index + delta
+        if not 0 <= new_idx < len(step.fields):
+            return
+        step.fields[index], step.fields[new_idx] = step.fields[new_idx], step.fields[index]
         self._refresh_detail()
 
     # --- rendering ---

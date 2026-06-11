@@ -96,3 +96,19 @@ def test_slugify_empty_falls_back_to_field_n():
 
 def test_slugify_collapses_runs_of_punctuation():
     assert _slugify("First Name (legal)", taken=set()) == "first_name_legal"
+
+
+def test_display_name_to_key_slugifies():
+    from not_dot_net.frontend.workflow_editor_options import display_name_to_key
+    assert display_name_to_key("Travel request", set()) == "travel_request"
+
+
+def test_display_name_to_key_prefixes_when_slug_starts_with_digit():
+    from not_dot_net.frontend.workflow_editor_options import display_name_to_key
+    key = display_name_to_key("3D printer access", set(), fallback_prefix="workflow")
+    assert key == "workflow_3d_printer_access"
+
+
+def test_display_name_to_key_dedups_against_taken():
+    from not_dot_net.frontend.workflow_editor_options import display_name_to_key
+    assert display_name_to_key("Travel request", {"travel_request"}) == "travel_request_2"
