@@ -3,6 +3,7 @@
 import logging
 import re
 import secrets
+import shutil
 import string
 import unicodedata
 import uuid
@@ -116,7 +117,12 @@ from not_dot_net.backend.workflow_engine import (
     compute_next_step,
     get_current_step_config,
 )
-from not_dot_net.backend.workflow_models import RequestStatus, WorkflowEvent, WorkflowRequest
+from not_dot_net.backend.workflow_models import (
+    RequestStatus,
+    WorkflowEvent,
+    WorkflowFile,
+    WorkflowRequest,
+)
 from not_dot_net.backend.notifications import notify
 from not_dot_net.backend.default_workflows import default_workflows
 from not_dot_net.config import (
@@ -544,6 +550,63 @@ async def cancel_request(
             target_type="request", target_id=req.id,
         )
         return req
+
+
+async def delete_request(request_id: uuid.UUID, actor_user) -> None:
+    """Hard-delete a request with its events and files (DB rows, plain uploads,
+    encrypted blobs). Superuser only — meant for purging test requests made in
+    real conditions. Audit log entries survive; the deletion itself is logged."""
+    if not getattr(actor_user, "is_superuser", False):
+        raise PermissionError("Only superusers can delete requests")
+
+    from sqlalchemy import delete as sa_delete
+    from not_dot_net.backend.encrypted_storage import (
+        EncryptedFile,
+        _resolve_encrypted_blob_path,
+    )
+
+    async with session_scope() as session:
+        req = await session.get(WorkflowRequest, request_id)
+        if req is None:
+            raise ValueError(f"Request {request_id} not found")
+        detail = f"type={req.type} status={req.status} target={req.target_email or ''}"
+
+        files = (await session.execute(
+            select(WorkflowFile).where(WorkflowFile.request_id == request_id)
+        )).scalars().all()
+        enc_ids = [f.encrypted_file_id for f in files if f.encrypted_file_id]
+
+        await session.execute(sa_delete(WorkflowFile).where(WorkflowFile.request_id == request_id))
+        await session.execute(sa_delete(WorkflowEvent).where(WorkflowEvent.request_id == request_id))
+
+        blob_paths = []
+        for enc_id in enc_ids:
+            enc_file = await session.get(EncryptedFile, enc_id)
+            if enc_file is None:
+                continue
+            try:
+                blob_paths.append(_resolve_encrypted_blob_path(enc_file.storage_path))
+            except ValueError:
+                logger.warning("Encrypted blob path outside storage root, row %s", enc_id)
+            await session.delete(enc_file)
+
+        await session.delete(req)
+        await session.commit()
+
+    for blob_path in blob_paths:
+        if blob_path.exists():
+            blob_path.unlink()
+    upload_dir = UPLOAD_ROOT / str(request_id)
+    if upload_dir.exists():
+        shutil.rmtree(upload_dir, ignore_errors=True)
+
+    from not_dot_net.backend.audit import log_audit
+    await log_audit(
+        "workflow", "delete",
+        actor_id=actor_user.id,
+        target_type="request", target_id=request_id,
+        detail=detail,
+    )
 
 
 async def save_draft(

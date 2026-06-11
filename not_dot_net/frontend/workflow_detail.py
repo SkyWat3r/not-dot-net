@@ -15,6 +15,7 @@ from not_dot_net.backend.workflow_service import (
     cancel_request,
     can_view_request,
     compute_step_age_days,
+    delete_request,
     get_request_by_id,
     list_events,
     resolve_actor_names,
@@ -194,6 +195,34 @@ def _render_header(req, wf, age_days, dash_cfg, actor_names, user):
                 ui.button(t("clone_request"), icon="content_copy", on_click=handle_clone).props(
                     "flat color=primary size=sm"
                 )
+            if getattr(user, "is_superuser", False):
+                ui.button(
+                    t("delete"), icon="delete_forever",
+                    on_click=lambda: _confirm_delete(req, user),
+                ).props("flat color=negative size=sm")
+
+
+def _confirm_delete(req, user):
+    dlg = ui.dialog()
+    with dlg, ui.card():
+        ui.label(t("confirm_delete_request")).classes("text-bold")
+
+        async def handle_delete():
+            try:
+                await delete_request(req.id, actor_user=user)
+            except Exception as e:
+                ui.notify(str(e), color="negative")
+                return
+            dlg.close()
+            ui.notify(t("request_deleted"), color="positive")
+            ui.navigate.to("/")
+
+        with ui.row():
+            ui.button(t("delete"), icon="delete_forever", on_click=handle_delete).props(
+                "color=negative"
+            )
+            ui.button(t("cancel"), on_click=dlg.close).props("flat")
+    dlg.open()
 
 
 def _render_timeline(events, actor_names, field_labels):
