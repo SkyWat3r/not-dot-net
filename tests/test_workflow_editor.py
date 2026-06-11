@@ -1356,3 +1356,59 @@ async def test_viewing_step_editor_does_not_assign_assignee(user: User, admin_us
     assert step.assignee_permission is None
     assert step.assignee is None
     assert not dlg.is_dirty()
+
+
+async def test_warnings_for_scopes_by_workflow_and_step(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "demo": WorkflowConfig(label="Demo", steps=[
+            WorkflowStepConfig(key="a", type="form",
+                               actions=["request_corrections"], corrections_target="ghost"),
+        ]),
+        "demo2": WorkflowConfig(label="Demo2", steps=[]),
+    }))
+    captured = {}
+
+    @ui.page("/_we_warnings_for")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_we_warnings_for")
+    dlg = captured["dlg"]
+    dlg._current_warnings = dlg.compute_warnings()
+
+    step_warns = dlg.warnings_for("demo", "a")
+    assert any("corrections_target" in w for w in step_warns)
+    assert dlg.warnings_for("demo2", "a") == []
+    wf_warns = dlg.warnings_for("demo2")
+    assert any("no steps" in w for w in wf_warns)
+    # workflow scope must not leak into a sibling whose key shares a prefix
+    assert all(not w.startswith("[demo2") for w in dlg.warnings_for("demo"))
+
+
+async def test_select_workflow_renders_pipeline_without_crash(user: User, admin_user):
+    """Smoke test: the new pipeline renderer handles steps with corrections
+    loops, rejects, plain advances, and a dead-end step with no actions."""
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "demo": WorkflowConfig(label="Demo", steps=[
+            WorkflowStepConfig(key="a", label="Start", type="form", actions=["submit"]),
+            WorkflowStepConfig(key="b", type="approval",
+                               actions=["approve", "reject", "request_corrections"],
+                               corrections_target="a"),
+            WorkflowStepConfig(key="c", type="form", actions=[]),
+        ]),
+    }))
+    captured = {}
+
+    @ui.page("/_we_pipeline_smoke")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_we_pipeline_smoke")
+    dlg = captured["dlg"]
+    dlg.select("demo")          # workflow view: full pipeline
+    dlg.select("demo", "b")     # step view
+    dlg.select("demo")          # and back
+    assert dlg.selected_workflow == "demo"
+    assert dlg.selected_step is None

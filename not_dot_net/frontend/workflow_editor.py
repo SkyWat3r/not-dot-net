@@ -17,6 +17,8 @@ from not_dot_net.config import FieldConfig, NotificationRuleConfig, OrgConfig, S
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_editor_options import (
     assignee_options,
+    assignee_summary,
+    display_name_to_key,
     event_options,
     recipient_options,
     _slugify,
@@ -371,26 +373,26 @@ class WorkflowEditorDialog:
     def _refresh_tree(self) -> None:
         if self._tree_container is None:
             return
+        self._current_warnings = self.compute_warnings()
         self._tree_container.clear()
         with self._tree_container:
             for wf_key, wf in self.working_copy.workflows.items():
-                self._render_workflow_header(wf_key, wf)
-                for step in wf.steps:
-                    self._render_step_row(wf_key, step.key)
-            ui.button("+ Add workflow", on_click=self._on_add_workflow_click).props("flat dense color=primary")
+                self._render_workflow_row(wf_key, wf)
+            ui.button(f"+ {t('add_workflow')}", on_click=self._on_add_workflow_click
+                      ).props("flat dense color=primary")
 
-    def _render_workflow_header(self, wf_key: str, wf) -> None:
-        is_selected = self.selected_workflow == wf_key and self.selected_step is None
-        with ui.row().classes(f"w-full items-center {'bg-blue-1' if is_selected else ''}"):
-            ui.button(wf.label or wf_key, on_click=lambda k=wf_key: self.select(k)).props("flat dense").classes("grow text-left")
-            ui.button(icon="content_copy", on_click=lambda k=wf_key: self._on_duplicate_click(k)).props("flat dense round size=sm")
-            ui.button(icon="delete", on_click=lambda k=wf_key: self.delete_workflow(k)).props("flat dense round size=sm color=negative")
-
-    def _render_step_row(self, wf_key: str, step_key: str) -> None:
-        is_selected = self.selected_workflow == wf_key and self.selected_step == step_key
-        with ui.row().classes(f"w-full items-center q-pl-md {'bg-blue-1' if is_selected else ''}"):
-            ui.button(f"• {step_key}", on_click=lambda w=wf_key, s=step_key: self.select(w, s)).props("flat dense").classes("grow text-left")
-            ui.button(icon="delete", on_click=lambda w=wf_key, s=step_key: self.delete_step(w, s)).props("flat dense round size=sm color=negative")
+    def _render_workflow_row(self, wf_key: str, wf) -> None:
+        is_selected = self.selected_workflow == wf_key
+        with ui.row().classes(f"w-full items-center no-wrap {'bg-blue-1' if is_selected else ''}"):
+            ui.button(wf.label or wf_key, on_click=lambda k=wf_key: self.select(k)
+                      ).props("flat dense no-caps").classes("grow text-left")
+            wf_warns = self.warnings_for(wf_key)
+            if wf_warns:
+                ui.icon("warning", color="warning", size="xs").tooltip("\n".join(wf_warns))
+            ui.button(icon="content_copy", on_click=lambda k=wf_key: self._on_duplicate_click(k)
+                      ).props("flat dense round size=sm").tooltip(t("duplicate"))
+            ui.button(icon="delete", on_click=lambda k=wf_key: self._confirm_delete_workflow(k)
+                      ).props("flat dense round size=sm color=negative")
 
     def _refresh_detail(self) -> None:
         if self._detail_container is None:
@@ -408,10 +410,6 @@ class WorkflowEditorDialog:
             else:
                 step = self._find_step(self.selected_workflow, self.selected_step)
                 self._render_step_editor(self.selected_workflow, step)
-            ui.button(
-                f"+ Add step to {self.selected_workflow}",
-                on_click=lambda k=self.selected_workflow: self._on_add_step_click(k),
-            ).props("flat dense color=primary")
         if self._warnings_label is not None:
             self._current_warnings = self.compute_warnings()
             if self._current_warnings:
@@ -446,7 +444,11 @@ class WorkflowEditorDialog:
                              on_change=lambda e, k=wf_key: self.set_workflow_field(k, "target_email_field", e.value or None)
                              ).classes("w-full").props("dense outlined stack-label").tooltip(t("wf_target_email_help"))
 
-        # --- Section 2: Notifications (collapsed; show count) ---
+        # --- Section 2: Steps pipeline ---
+        ui.label(t("wf_section_steps")).classes("text-subtitle2 q-mt-md")
+        self._render_pipeline(wf_key, wf)
+
+        # --- Section 3: Notifications (collapsed; show count) ---
         n_notif = len(wf.notifications)
         with ui.expansion(f"{t('wf_section_notifications')}  ({n_notif})", icon="notifications"
                           ).classes("w-full"):
@@ -458,6 +460,58 @@ class WorkflowEditorDialog:
                           ).classes("w-full"):
             di = keyed_chip_editor(wf.document_instructions or {}, key_label="status")
             self._workflow_doc_instructions_widget = (wf_key, di)
+
+    def _render_pipeline(self, wf_key: str, wf) -> None:
+        from not_dot_net.config import step_display
+        if not wf.steps:
+            ui.label(t("empty_steps")).classes("text-grey text-sm")
+        last = len(wf.steps) - 1
+        for idx, step in enumerate(wf.steps):
+            card = ui.card().classes("w-full q-pa-sm cursor-pointer").props("flat bordered")
+            card.on("click", lambda e, w=wf_key, s=step.key: self.select(w, s))
+            with card:
+                with ui.row().classes("w-full items-center no-wrap gap-2"):
+                    ui.badge(str(idx + 1)).props("rounded color=primary")
+                    with ui.column().classes("grow gap-0"):
+                        ui.label(step_display(step)).classes("text-subtitle2")
+                        ui.label(assignee_summary(step, self._roles, self._permissions)
+                                 ).classes("text-grey text-xs")
+                    step_warns = self.warnings_for(wf_key, step.key)
+                    if step_warns:
+                        ui.icon("warning", color="warning").tooltip("\n".join(step_warns))
+                    up = ui.button(icon="keyboard_arrow_up").props("flat dense round size=sm")
+                    up.on("click.stop", lambda e, w=wf_key, s=step.key: self.move_step(w, s, -1))
+                    if idx == 0:
+                        up.props("disable")
+                    down = ui.button(icon="keyboard_arrow_down").props("flat dense round size=sm")
+                    down.on("click.stop", lambda e, w=wf_key, s=step.key: self.move_step(w, s, +1))
+                    if idx == last:
+                        down.props("disable")
+                    rm = ui.button(icon="delete").props("flat dense round size=sm color=negative")
+                    rm.on("click.stop", lambda e, w=wf_key, s=step.key: self._confirm_delete_step(w, s))
+            self._render_transition_labels(wf, idx, step)
+        ui.button(f"+ {t('add_step')}", on_click=lambda k=wf_key: self._on_add_step_click(k)
+                  ).props("flat dense color=primary")
+
+    def _render_transition_labels(self, wf, idx: int, step) -> None:
+        from not_dot_net.config import step_display
+        actions = step.actions or []
+        advancing = [a for a in actions if a not in ("reject", "request_corrections")]
+        parts: list[str] = []
+        if advancing:
+            dest = (step_display(wf.steps[idx + 1]) if idx + 1 < len(wf.steps)
+                    else f"✓ {t('pipeline_completed')}")
+            parts.append(f"↓ {' / '.join(advancing)} → {dest}")
+        if "request_corrections" in actions:
+            target_step = next((s for s in wf.steps if s.key == step.corrections_target), None)
+            dest = step_display(target_step) if target_step else (step.corrections_target or "?")
+            parts.append(f"↰ request_corrections → {dest}")
+        if "reject" in actions:
+            parts.append(f"✕ reject → {t('pipeline_rejected')}")
+        if not parts:
+            parts.append(f"⚠ {t('pipeline_no_actions')}")
+        with ui.row().classes("w-full q-pl-lg q-py-none"):
+            ui.label("    ".join(parts)).classes("text-grey text-xs")
 
     def _render_notification_table(self, wf_key: str, wf) -> None:
         step_keys = [s.key for s in wf.steps]
@@ -846,31 +900,46 @@ class WorkflowEditorDialog:
                 self.working_copy.workflows[wf_key].document_instructions = widget.value
 
     def _on_add_workflow_click(self) -> None:
-        self._prompt_for_key("New workflow key", lambda k: self.add_workflow(k))
+        def _create(name: str) -> None:
+            key = display_name_to_key(name, set(self.working_copy.workflows), fallback_prefix="workflow")
+            self.add_workflow(key, label=name)
+        self._prompt_for_name(t("new_workflow_prompt"), _create)
 
     def _on_duplicate_click(self, src_key: str) -> None:
-        self._prompt_for_key(f"Duplicate '{src_key}' as", lambda k: self.duplicate_workflow(src_key, k))
+        def _create(name: str, src=src_key) -> None:
+            key = display_name_to_key(name, set(self.working_copy.workflows), fallback_prefix="workflow")
+            self.duplicate_workflow(src, key, label=name)
+        self._prompt_for_name(t("duplicate_workflow_prompt"), _create)
 
     def _on_add_step_click(self, wf_key: str) -> None:
-        self._prompt_for_key("New step key", lambda k: self.add_step(wf_key, k))
+        def _create(name: str, wk=wf_key) -> None:
+            taken = {s.key for s in self.working_copy.workflows[wk].steps}
+            key = display_name_to_key(name, taken, fallback_prefix="step")
+            self.add_step(wk, key, label=name)
+        self._prompt_for_name(t("new_step_prompt"), _create)
 
-    def _prompt_for_key(self, prompt: str, callback) -> None:
+    def _prompt_for_name(self, prompt: str, callback) -> None:
         dlg = ui.dialog()
         with dlg, ui.card():
             ui.label(prompt)
-            inp = ui.input(label="key").props("dense outlined stack-label autofocus")
+            inp = ui.input(label=t("name_label")).props("dense outlined stack-label autofocus")
             err = ui.label("").classes("text-negative text-sm")
 
             def confirm():
+                value = (inp.value or "").strip()
+                if not value:
+                    err.set_text(t("name_required"))
+                    return
                 try:
-                    callback(inp.value.strip())
+                    callback(value)
                     dlg.close()
                 except ValueError as e:
                     err.set_text(str(e))
 
+            inp.on("keydown.enter", lambda e: confirm())
             with ui.row():
                 ui.button("OK", on_click=confirm).props("color=primary")
-                ui.button("Cancel", on_click=dlg.close).props("flat")
+                ui.button(t("cancel"), on_click=dlg.close).props("flat")
         dlg.open()
 
     # --- validation & dirty tracking ---
@@ -955,6 +1024,15 @@ class WorkflowEditorDialog:
                             )
         return warnings
 
+    def warnings_for(self, wf_key: str, step_key: str | None = None) -> list[str]:
+        """Scope the flat warning strings to one workflow or one step, relying on
+        the existing '[wf]' / '[wf/step]' / '[wf/step/field]' prefix convention."""
+        if step_key is None:
+            prefixes = (f"[{wf_key}]", f"[{wf_key}/")
+        else:
+            prefixes = (f"[{wf_key}/{step_key}]", f"[{wf_key}/{step_key}/")
+        return [w for w in self._current_warnings if w.startswith(prefixes)]
+
     def _show_warnings(self, warnings: list[str]) -> None:
         dlg = ui.dialog()
         with dlg, ui.card():
@@ -963,6 +1041,29 @@ class WorkflowEditorDialog:
                 ui.label(f"• {w}")
             ui.button("Close", on_click=dlg.close).props("flat")
         dlg.open()
+
+    def _confirm(self, message: str, on_confirm) -> None:
+        dlg = ui.dialog()
+        with dlg, ui.card():
+            ui.label(message)
+            with ui.row():
+                ui.button(t("delete"), on_click=lambda: (dlg.close(), on_confirm())).props("color=negative")
+                ui.button(t("cancel"), on_click=dlg.close).props("flat")
+        dlg.open()
+
+    def _confirm_delete_workflow(self, key: str) -> None:
+        wf = self.working_copy.workflows.get(key)
+        name = (wf.label if wf else None) or key
+        self._confirm(t("confirm_delete", name=name), lambda k=key: self.delete_workflow(k))
+
+    def _confirm_delete_step(self, wf_key: str, step_key: str) -> None:
+        from not_dot_net.config import step_display
+        try:
+            name = step_display(self._find_step(wf_key, step_key))
+        except KeyError:
+            name = step_key
+        self._confirm(t("confirm_delete", name=name),
+                      lambda w=wf_key, s=step_key: self.delete_step(w, s))
 
     def _on_cancel_click(self) -> None:
         if not self.is_dirty():
