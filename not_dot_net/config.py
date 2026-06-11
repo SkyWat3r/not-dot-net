@@ -46,6 +46,7 @@ class StepEffectConfig(BaseModel):
 
 class WorkflowStepConfig(BaseModel):
     key: str
+    label: str = ""
     type: str  # form, approval
     assignee_role: str | None = None
     assignee_permission: str | None = None
@@ -55,6 +56,11 @@ class WorkflowStepConfig(BaseModel):
     partial_save: bool = False
     corrections_target: str | None = None
     effects: list[StepEffectConfig] = Field(default_factory=list)
+
+
+def step_display(step: WorkflowStepConfig) -> str:
+    """Human name for a step: explicit label, else the key prettified."""
+    return step.label or step.key.replace("_", " ").capitalize()
 
 
 class WorkflowConfig(BaseModel):

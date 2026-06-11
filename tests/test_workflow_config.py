@@ -82,3 +82,21 @@ async def test_field_config_round_trips_visible_when_and_checkbox():
     fields = reloaded.workflows["demo"].steps[0].fields
     assert fields[0].type == "checkbox"
     assert fields[1].visible_when == {"zrr": True}
+
+
+def test_step_label_defaults_empty_for_legacy_configs():
+    from not_dot_net.config import WorkflowStepConfig
+    step = WorkflowStepConfig.model_validate({"key": "newcomer_info", "type": "form"})
+    assert step.label == ""
+
+
+def test_step_display_prefers_label():
+    from not_dot_net.config import WorkflowStepConfig, step_display
+    step = WorkflowStepConfig(key="newcomer_info", label="Newcomer information", type="form")
+    assert step_display(step) == "Newcomer information"
+
+
+def test_step_display_falls_back_to_prettified_key():
+    from not_dot_net.config import WorkflowStepConfig, step_display
+    step = WorkflowStepConfig(key="newcomer_info", type="form")
+    assert step_display(step) == "Newcomer info"

@@ -17,7 +17,7 @@ from not_dot_net.backend.workflow_service import (
     workflows_config,
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config, get_step_progress
-from not_dot_net.config import dashboard_config
+from not_dot_net.config import dashboard_config, step_display
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_step import (
     render_step_progress,
@@ -185,7 +185,7 @@ async def _render_requests_table(container, requests):
         for req in requests:
             wf = cfg.workflows.get(req.type)
             step_config = get_current_step_config(req, wf) if wf else None
-            step_label = step_config.key if step_config else req.current_step
+            step_label = step_display(step_config) if step_config else req.current_step
             current, total = get_step_progress(req, wf) if wf else (0, 0)
             events = events_by_req.get(req.id, [])
             age = compute_step_age_days(events, req.current_step)
