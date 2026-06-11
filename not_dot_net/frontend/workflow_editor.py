@@ -398,6 +398,7 @@ class WorkflowEditorDialog:
         if self._detail_container is None:
             return
         self._collect_widget_state()
+        self._current_warnings = self.compute_warnings()
         self._workflow_doc_instructions_widget = None
         self._detail_container.clear()
         with self._detail_container:
@@ -411,7 +412,6 @@ class WorkflowEditorDialog:
                 step = self._find_step(self.selected_workflow, self.selected_step)
                 self._render_step_editor(self.selected_workflow, step)
         if self._warnings_label is not None:
-            self._current_warnings = self.compute_warnings()
             if self._current_warnings:
                 self._warnings_label.set_text(f"⚠ {len(self._current_warnings)} issue(s) — click to view")
                 self._warnings_label.classes(replace="text-warning text-sm cursor-pointer")
