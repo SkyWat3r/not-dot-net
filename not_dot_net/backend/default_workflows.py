@@ -22,8 +22,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                 WorkflowStepConfig(
                     key="request",
                     type="form",
-                    assignee_role="staff",
-                    assignee_permission="create_workflows",
+                    assignee="requester",
                     fields=[
                         FieldConfig(name="target_name", type="text", required=True, label="target_name"),
                         FieldConfig(name="target_email", type="email", required=True, label="target_email"),
@@ -34,7 +33,6 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                 WorkflowStepConfig(
                     key="approval",
                     type="approval",
-                    assignee_role="director",
                     assignee_permission="approve_workflows",
                     actions=["approve", "reject"],
                     effects=[
@@ -65,7 +63,6 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                     key="initiation",
                     type="form",
                     assignee="requester",
-                    assignee_permission="create_workflows",
                     fields=[
                         FieldConfig(name="contact_email", type="email", required=True, label="contact_email"),
                         FieldConfig(name="status", type="select", required=True, label="status", options_key="employment_statuses"),
@@ -121,7 +118,6 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                     key="submission",
                     type="form",
                     assignee="requester",
-                    assignee_permission="create_workflows",
                     fields=[
                         FieldConfig(name="mission_subject", type="textarea", required=True, label="mission_subject"),
                         FieldConfig(name="destination", type="location", required=True, label="destination"),
@@ -146,7 +142,6 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                 WorkflowStepConfig(
                     key="director_approval",
                     type="approval",
-                    assignee_role="director",
                     assignee_permission="approve_workflows",
                     actions=["approve", "reject"],
                 ),

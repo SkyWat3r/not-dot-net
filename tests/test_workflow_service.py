@@ -157,6 +157,55 @@ async def test_list_actionable_by_role():
     assert actionable[0].current_step == "approval"
 
 
+async def test_list_actionable_requester_step_hidden_from_other_users():
+    """A step assigned to the requester must never appear in another user's
+    actionable list, even when the step also carries an assignee_permission
+    that the other user holds (everyone has create_workflows — the dashboard
+    was showing everyone's requests stuck at requester steps)."""
+    await _setup_roles()
+    alice = await _create_user(email="alice@test.com", role="staff")
+    bob = await _create_user(email="bob@test.com", role="staff")
+    req = await create_request(
+        workflow_type="ordre_de_mission",
+        created_by=alice.id,
+        data={"mission_subject": "conf"},
+        actor=alice,
+    )
+    assert req.current_step == "submission"  # assignee="requester"
+
+    assert await list_actionable(bob) == []
+    actionable_alice = await list_actionable(alice)
+    assert [r.id for r in actionable_alice] == [req.id]
+
+
+async def test_list_actionable_matches_can_user_act_for_permission_steps():
+    """When a step sets assignee_permission, a user lacking that permission
+    must not match via the step's assignee_role fallback — can_user_act
+    refuses them, so the actionable list must too."""
+    from not_dot_net.backend.workflow_engine import can_user_act
+    from not_dot_net.backend.workflow_service import workflows_config
+
+    await _setup_roles()
+    cfg = await roles_config.get()
+    cfg.roles["director"] = RoleDefinition(label="Director", permissions=["create_workflows"])
+    await roles_config.set(cfg)
+
+    staff = await _create_user(email="staff@test.com", role="staff")
+    fake_director = await _create_user(email="fake@test.com", role="director")
+    req = await create_request(
+        workflow_type="vpn_access",
+        created_by=staff.id,
+        data={"target_name": "A", "target_email": "a@test.com"},
+    )
+    await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
+    # approval step: assignee_role="director" + assignee_permission="approve_workflows";
+    # fake_director has the role but not the permission
+    req = await get_request_by_id(req.id)
+    wf = (await workflows_config.get()).workflows["vpn_access"]
+    assert not await can_user_act(fake_director, req, wf)
+    assert await list_actionable(fake_director) == []
+
+
 async def test_get_request_by_id():
     user = await _create_user()
     req = await create_request(

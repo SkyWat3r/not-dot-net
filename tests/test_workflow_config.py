@@ -28,7 +28,7 @@ async def test_step_config_fields():
     step = cfg.workflows["vpn_access"].steps[0]
     assert step.key == "request"
     assert step.type == "form"
-    assert step.assignee_role == "staff"
+    assert step.assignee == "requester"
     assert len(step.fields) >= 2
     assert "submit" in step.actions
 

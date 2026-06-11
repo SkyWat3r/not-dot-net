@@ -75,6 +75,22 @@ def compute_next_step(
     return (None, RequestStatus.COMPLETED)
 
 
+def effective_assignee(step: WorkflowStepConfig) -> tuple[str, str] | None:
+    """Single source of truth for step-assignee precedence:
+    contextual assignee > permission > role. The editor only ever sets one
+    of the three, but legacy configs carry several — every consumer
+    (can_user_act, list_actionable's SQL filters) must resolve them
+    identically or users see requests they cannot act on.
+    """
+    if step.assignee in ("target_person", "requester"):
+        return (step.assignee, "")
+    if step.assignee_permission:
+        return ("permission", step.assignee_permission)
+    if step.assignee_role:
+        return ("role", step.assignee_role)
+    return None
+
+
 async def can_user_act(user, request, workflow: WorkflowConfig) -> bool:
     """Check if a user can act on the current step."""
     from not_dot_net.backend.permissions import has_permissions
@@ -83,14 +99,15 @@ async def can_user_act(user, request, workflow: WorkflowConfig) -> bool:
     if step is None:
         return False
 
-    if step.assignee == "target_person":
-        return _email_eq(user.email, request.target_email)
-    if step.assignee == "requester":
-        return str(user.id) == str(request.created_by)
-    if step.assignee_permission:
-        return await has_permissions(user, step.assignee_permission)
-    if step.assignee_role:
-        return user.role == step.assignee_role
+    match effective_assignee(step):
+        case ("target_person", _):
+            return _email_eq(user.email, request.target_email)
+        case ("requester", _):
+            return str(user.id) == str(request.created_by)
+        case ("permission", perm):
+            return await has_permissions(user, perm)
+        case ("role", role):
+            return user.role == role
     return False
 
 

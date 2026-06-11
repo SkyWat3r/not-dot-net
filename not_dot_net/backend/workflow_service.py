@@ -708,8 +708,13 @@ def compute_step_age_days(events: list[WorkflowEvent], current_step: str) -> int
 
 
 async def _build_actionable_filters(user, cfg):
-    """Build SQL OR-conditions for steps where user can act."""
+    """Build SQL OR-conditions for steps where user can act.
+
+    Must mirror `workflow_engine.can_user_act` exactly — both resolve the
+    step's assignee via `effective_assignee`.
+    """
     from sqlalchemy import func as sa_func
+    from not_dot_net.backend.workflow_engine import effective_assignee
     filters = []
     user_email_lc = (user.email or "").strip().lower()
     for wf_type, wf in cfg.workflows.items():
@@ -718,17 +723,20 @@ async def _build_actionable_filters(user, cfg):
                 WorkflowRequest.type == wf_type,
                 WorkflowRequest.current_step == step.key,
             )
-            if step.assignee_permission and await has_permissions(user, step.assignee_permission):
-                filters.append(step_match)
-            elif step.assignee_role and user.role == step.assignee_role:
-                filters.append(step_match)
-            elif step.assignee == "target_person":
-                filters.append(and_(
-                    step_match,
-                    sa_func.lower(WorkflowRequest.target_email) == user_email_lc,
-                ))
-            elif step.assignee == "requester":
-                filters.append(and_(step_match, WorkflowRequest.created_by == user.id))
+            match effective_assignee(step):
+                case ("target_person", _):
+                    filters.append(and_(
+                        step_match,
+                        sa_func.lower(WorkflowRequest.target_email) == user_email_lc,
+                    ))
+                case ("requester", _):
+                    filters.append(and_(step_match, WorkflowRequest.created_by == user.id))
+                case ("permission", perm):
+                    if await has_permissions(user, perm):
+                        filters.append(step_match)
+                case ("role", role):
+                    if user.role == role:
+                        filters.append(step_match)
     return filters
 
 
