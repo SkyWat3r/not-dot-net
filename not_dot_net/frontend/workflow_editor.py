@@ -423,7 +423,7 @@ class WorkflowEditorDialog:
     def _render_workflow_editor(self, wf_key: str, wf) -> None:
         from not_dot_net.frontend.widgets import keyed_chip_editor
 
-        ui.label(f"Workflow: {wf_key}").classes("text-h6")
+        ui.label(wf.label or wf_key).classes("text-h6")
 
         # --- Section 1: Basics (open by default) ---
         with ui.expansion(t("wf_section_basics"), value=True, icon="info").classes("w-full"):
