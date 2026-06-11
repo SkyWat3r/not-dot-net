@@ -8,12 +8,30 @@ from not_dot_net.frontend.widgets import chip_list_editor, keyed_chip_editor
 
 
 async def test_chip_list_editor_initial_value(user: User):
+    """Without suggestions the editor must be a free-form tags input.
+
+    A QSelect with empty options renders selected values as nothing in the
+    browser — the settings page showed blank fields for teams/employers/
+    transport_modes despite correct server-side values.
+    """
     @ui.page("/_w1")
     def _page():
         chip_list_editor(["a", "b", "c"])
     await user.open("/_w1")
+    chips = user.find(kind=ui.input_chips).elements.pop()
+    assert list(chips.value) == ["a", "b", "c"]
+
+
+async def test_chip_list_editor_suggestions_keep_current_values_visible(user: User):
+    """QSelect only renders chips for values present in options — current
+    values outside the suggestion list must be merged into options."""
+    @ui.page("/_w1b")
+    def _page():
+        chip_list_editor(["legacy"], suggestions=["a", "b"])
+    await user.open("/_w1b")
     select = user.find(kind=ui.select).elements.pop()
-    assert list(select.value) == ["a", "b", "c"]
+    assert "legacy" in select.options
+    assert list(select.value) == ["legacy"]
 
 
 async def test_chip_list_editor_returns_list_type(user: User):

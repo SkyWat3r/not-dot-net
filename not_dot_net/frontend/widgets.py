@@ -9,19 +9,28 @@ def chip_list_editor(
     label: str = "",
     suggestions: list[str] | None = None,
 ):
-    """Chip-style multi-value text input.
+    """Chip-style multi-value text input. Reads/writes a `list[str]`.
 
-    Backed by a Quasar q-select in `use-chips` + `use-input` mode with
-    `new-value-mode="add-unique"`. Reads/writes a `list[str]`.
+    Without suggestions: a free-form tags editor (`ui.input_chips`).
+    With suggestions: a Quasar q-select in `use-chips` + `use-input` mode.
+    Current values are merged into the options — QSelect only renders chips
+    for values present in options, so out-of-list values would otherwise
+    be invisible in the browser.
     """
-    options = list(suggestions) if suggestions else []
+    if suggestions is None:
+        return ui.input_chips(
+            label or None,
+            value=list(value),
+            new_value_mode="add-unique",
+        ).props("outlined dense stack-label").classes("w-full")
+    options = list(dict.fromkeys([*suggestions, *value]))
     select = ui.select(
         options=options,
         value=list(value),
         label=label or None,
         multiple=True,
         new_value_mode="add-unique",
-    ).props('use-chips use-input outlined dense stack-label hide-dropdown-icon input-debounce=0').classes("w-full")
+    ).props('use-chips use-input outlined dense stack-label input-debounce=0').classes("w-full")
     return select
 
 
