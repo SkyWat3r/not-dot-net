@@ -1412,3 +1412,46 @@ async def test_select_workflow_renders_pipeline_without_crash(user: User, admin_
     dlg.select("demo")          # and back
     assert dlg.selected_workflow == "demo"
     assert dlg.selected_step is None
+
+
+async def test_action_picker_preserves_unknown_persisted_action(user: User, admin_user):
+    """A legacy action like 'legacy_sign_off' must survive a round-trip through
+    the step editor's action picker (rendered as '<name> (custom)')."""
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "demo": WorkflowConfig(label="Demo", steps=[
+            WorkflowStepConfig(key="s1", type="form", actions=["submit", "legacy_sign_off"]),
+        ]),
+    }))
+    captured = {}
+
+    @ui.page("/_we_action_picker")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_we_action_picker")
+    dlg = captured["dlg"]
+    dlg.select("demo", "s1")  # render the step editor
+
+    step = dlg.working_copy.workflows["demo"].steps[0]
+    assert step.actions == ["submit", "legacy_sign_off"]
+    assert not dlg.is_dirty()
+
+
+async def test_step_label_edit_propagates(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "demo": WorkflowConfig(label="Demo", steps=[
+            WorkflowStepConfig(key="s1", type="form"),
+        ]),
+    }))
+    captured = {}
+
+    @ui.page("/_we_step_label")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_we_step_label")
+    dlg = captured["dlg"]
+    dlg.set_step_field("demo", "s1", "label", "First step")
+    assert dlg.working_copy.workflows["demo"].steps[0].label == "First step"

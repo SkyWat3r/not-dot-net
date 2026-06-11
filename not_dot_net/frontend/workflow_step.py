@@ -8,7 +8,7 @@ import httpx
 from nicegui import ui
 
 from not_dot_net.backend.workflow_engine import get_completion_status
-from not_dot_net.config import WorkflowStepConfig
+from not_dot_net.config import WorkflowStepConfig, step_display
 from not_dot_net.frontend.i18n import TRANSLATIONS, get_locale, t
 
 _log = logging.getLogger(__name__)
@@ -545,13 +545,13 @@ def render_step_progress(current_step: str, status: str, steps: list):
     with ui.row().classes("w-full gap-1"):
         for i, step in enumerate(steps):
             if is_completed or i < current_idx:
-                label = f"✓ {step.key}"
+                label = f"✓ {step_display(step)}"
                 cls = "text-[11px] text-positive font-medium flex-1"
             elif i == current_idx:
-                label = f"● {step.key}"
+                label = f"● {step_display(step)}"
                 cls = "text-[11px] text-primary font-semibold flex-1"
             else:
-                label = step.key
+                label = step_display(step)
                 cls = "text-[11px] text-grey-7 flex-1"
             ui.label(label).classes(cls)
 

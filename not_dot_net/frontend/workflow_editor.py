@@ -652,12 +652,17 @@ class WorkflowEditorDialog:
         step.effects[idx].params = params
 
     def _render_step_editor(self, wf_key: str, step) -> None:
-        from not_dot_net.frontend.widgets import chip_list_editor
+        from not_dot_net.config import step_display
+        from not_dot_net.frontend.workflow_editor_options import action_options
 
-        ui.label(f"Step: {step.key}").classes("text-h6")
+        wf = self.working_copy.workflows[wf_key]
+        with ui.row().classes("items-center gap-2"):
+            ui.button(icon="arrow_back", on_click=lambda w=wf_key: self.select(w)
+                      ).props("flat dense round").tooltip(t("back_to_workflow", name=wf.label or wf_key))
+            ui.label(step_display(step)).classes("text-h6")
 
-        ui.input("key", value=step.key,
-                 on_change=lambda e, w=wf_key, k=step.key: self._safe_set(w, k, "key", e.value)
+        ui.input(t("step_label_field"), value=step.label,
+                 on_change=lambda e, w=wf_key, k=step.key: self.set_step_field(w, k, "label", e.value)
                  ).classes("w-full").props("dense outlined stack-label")
 
         ui.select(
@@ -734,19 +739,20 @@ class WorkflowEditorDialog:
 
         # actions
         ui.label(t("step_actions")).classes("text-subtitle2 q-mt-sm")
-        actions_widget = chip_list_editor(step.actions,
-                                          suggestions=["submit", "approve", "reject", "request_corrections", "cancel"])
+        act_opts = {o["value"]: o["label"] for o in action_options(step.actions)}
+        actions_select = ui.select(act_opts, value=list(step.actions or []), multiple=True,
+                                   label=t("step_actions")
+                                   ).classes("w-full").props("dense outlined stack-label use-chips")
 
-        def _bind_actions(w=actions_widget, wk=wf_key, sk=step.key):
-            self.set_step_field(wk, sk, "actions", list(w.value))
+        def _bind_actions(w=actions_select, wk=wf_key, sk=step.key):
+            self.set_step_field(wk, sk, "actions", list(w.value or []))
             self._refresh_detail()  # corrections_target visibility may change
-        actions_widget.on_value_change(lambda e, _b=_bind_actions: _b())
+        actions_select.on_value_change(lambda e, _b=_bind_actions: _b())
 
         ui.switch(t("step_partial_save"), value=step.partial_save,
                   on_change=lambda e, w=wf_key, k=step.key: self.set_step_field(w, k, "partial_save", e.value))
 
         if "request_corrections" in (step.actions or []):
-            wf = self.working_copy.workflows[wf_key]
             other_keys = [s.key for s in wf.steps if s.key != step.key]
             ui.select([None, *other_keys], value=step.corrections_target, label=t("step_corrections_target"),
                       on_change=lambda e, w=wf_key, k=step.key: self.set_step_field(w, k, "corrections_target", e.value)
@@ -786,6 +792,12 @@ class WorkflowEditorDialog:
                                       self.set_field_attr(w, sk, i, "half_width", e.value))
                         with ui.expansion(t("field_more"), icon="more_vert").classes("grow-0"):
                             self._render_field_more(wf_key, step.key, idx, field, org_keys)
+                        ui.button(icon="keyboard_arrow_up",
+                                  on_click=lambda e, i=idx, w=wf_key, sk=step.key: self.move_field(w, sk, i, -1)
+                                  ).props(f"flat dense round size=sm {'disable' if idx == 0 else ''}")
+                        ui.button(icon="keyboard_arrow_down",
+                                  on_click=lambda e, i=idx, w=wf_key, sk=step.key: self.move_field(w, sk, i, +1)
+                                  ).props(f"flat dense round size=sm {'disable' if idx == len(step.fields) - 1 else ''}")
                         ui.button(icon="delete",
                                   on_click=lambda i=idx, w=wf_key, sk=step.key:
                                       self.delete_field(w, sk, i)
@@ -794,6 +806,12 @@ class WorkflowEditorDialog:
             ui.button("+ Add field",
                       on_click=lambda w=wf_key, sk=step.key: self.add_field(w, sk)
                       ).props("flat dense color=primary")
+
+        with ui.expansion(t("step_advanced"), icon="settings").classes("w-full q-mt-md"):
+            ui.label(t("step_key_hint")).classes("text-warning text-xs")
+            ui.input(t("step_key_field"), value=step.key,
+                     on_change=lambda e, w=wf_key, k=step.key: self._safe_set(w, k, "key", e.value)
+                     ).classes("w-full").props("dense outlined stack-label")
 
     def _render_field_more(self, wf_key: str, step_key: str, idx: int, field, org_keys) -> None:
         locked = self._is_field_name_locked(wf_key, step_key, field.name)
@@ -837,12 +855,14 @@ class WorkflowEditorDialog:
                 key_select = ui.select(
                     [None, *checkbox_names],
                     value=current_key,
-                ).props("dense outlined").classes("grow")
+                    label=t("visible_when_checkbox"),
+                ).props("dense outlined stack-label").classes("grow")
                 ui.label("=").classes("text-grey")
                 val_select = ui.select(
                     [True, False],
                     value=current_val if isinstance(current_val, bool) else None,
-                ).props("dense outlined").classes("w-24")
+                    label=t("visible_when_value"),
+                ).props("dense outlined stack-label").classes("w-24")
 
             def _apply(_e=None, w=wf_key, sk=step_key, i=idx,
                        ks=key_select, vs=val_select):

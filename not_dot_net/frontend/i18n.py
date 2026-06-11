@@ -448,6 +448,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "copied": "Copied",
         "group_add_failures": "Could not add to: {groups}",
         "ou_required": "Please pick an OU",
+        "back_to_workflow": "Back to {name}",
+        "step_label_field": "Step name",
+        "step_advanced": "Advanced",
+        "step_key_field": "Internal key",
+        "step_key_hint": "Renaming the key of a live workflow can strand in-progress requests on the old key.",
+        "visible_when_checkbox": "Checkbox",
+        "visible_when_value": "Value",
     },
     "fr": {
         # Shell / nav
@@ -892,6 +899,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "copied": "Copié",
         "group_add_failures": "Impossible d'ajouter à : {groups}",
         "ou_required": "Veuillez choisir une OU",
+        "back_to_workflow": "Retour à {name}",
+        "step_label_field": "Nom de l'étape",
+        "step_advanced": "Avancé",
+        "step_key_field": "Clé interne",
+        "step_key_hint": "Renommer la clé d'un processus actif peut bloquer les demandes en cours sur l'ancienne clé.",
+        "visible_when_checkbox": "Case à cocher",
+        "visible_when_value": "Valeur",
     },
 }
 
