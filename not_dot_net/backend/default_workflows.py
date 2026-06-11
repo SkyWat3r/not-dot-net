@@ -21,6 +21,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
             steps=[
                 WorkflowStepConfig(
                     key="request",
+                    label="Request",
                     type="form",
                     assignee="requester",
                     fields=[
@@ -32,6 +33,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                 ),
                 WorkflowStepConfig(
                     key="approval",
+                    label="Approval",
                     type="approval",
                     assignee_permission="approve_workflows",
                     actions=["approve", "reject"],
@@ -61,6 +63,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
             steps=[
                 WorkflowStepConfig(
                     key="initiation",
+                    label="Initiation",
                     type="form",
                     assignee="requester",
                     fields=[
@@ -72,6 +75,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                 ),
                 WorkflowStepConfig(
                     key="newcomer_info",
+                    label="Newcomer information",
                     type="form",
                     assignee="target_person",
                     partial_save=True,
@@ -89,6 +93,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                 ),
                 WorkflowStepConfig(
                     key="admin_validation",
+                    label="Admin validation",
                     type="approval",
                     assignee_permission="access_personal_data",
                     actions=["approve", "request_corrections", "reject"],
@@ -96,6 +101,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                 ),
                 WorkflowStepConfig(
                     key="it_account_creation",
+                    label="IT account creation",
                     type="ad_account_creation",
                     assignee_permission="manage_users",
                     fields=[],
@@ -116,6 +122,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
             steps=[
                 WorkflowStepConfig(
                     key="submission",
+                    label="Submission",
                     type="form",
                     assignee="requester",
                     fields=[
@@ -134,6 +141,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                 ),
                 WorkflowStepConfig(
                     key="admin_validation",
+                    label="Admin validation",
                     type="approval",
                     assignee_permission="approve_workflows",
                     actions=["approve", "request_corrections", "reject"],
@@ -141,6 +149,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                 ),
                 WorkflowStepConfig(
                     key="director_approval",
+                    label="Director approval",
                     type="approval",
                     assignee_permission="approve_workflows",
                     actions=["approve", "reject"],
