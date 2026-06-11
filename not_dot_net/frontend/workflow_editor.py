@@ -622,31 +622,37 @@ class WorkflowEditorDialog:
         sub_select_container = ui.row().classes("w-full")
         sub_select_holder: dict = {"select": None}
 
-        def _render_sub_select(kind_value: str) -> None:
+        def _render_sub_select(kind_value: str, *, apply: bool = True) -> None:
             sub_select_container.clear()
             sub_list = sub_opts_by_kind.get(kind_value, [])
             if not sub_list:
                 contextual_value = "contextual:requester" if kind_value == "contextual_requester" else "contextual:target_person"
-                self.set_step_assignee_from_picker(wf_key, step.key, contextual_value)
+                if apply:
+                    self.set_step_assignee_from_picker(wf_key, step.key, contextual_value)
                 sub_select_holder["select"] = None
                 return
             if len(sub_list) == 1:
                 only = sub_list[0]["value"]
                 with sub_select_container:
                     ui.label(sub_list[0]["label"]).classes("text-grey")
-                self.set_step_assignee_from_picker(wf_key, step.key, only)
+                if apply:
+                    self.set_step_assignee_from_picker(wf_key, step.key, only)
                 sub_select_holder["select"] = None
                 return
             options_dict = {o["value"]: o["label"] for o in sub_list}
-            initial = current_val if (current_val and any(o["value"] == current_val for o in sub_list)) else sub_list[0]["value"]
+            if current_val and any(o["value"] == current_val for o in sub_list):
+                initial = current_val
+            else:
+                initial = sub_list[0]["value"] if apply else None
             with sub_select_container:
                 sub = ui.select(options_dict, value=initial, label=t("step_assignee")
                                 ).classes("w-full").props("dense outlined stack-label")
                 sub.on_value_change(lambda e, w=wf_key, k=step.key: self.set_step_assignee_from_picker(w, k, e.value))
             sub_select_holder["select"] = sub
-            self.set_step_assignee_from_picker(wf_key, step.key, initial)
+            if apply:
+                self.set_step_assignee_from_picker(wf_key, step.key, initial)
 
-        _render_sub_select(current_kind)
+        _render_sub_select(current_kind, apply=False)
         kind_select.on_value_change(lambda e, _r=_render_sub_select: _r(e.value))
 
         # actions

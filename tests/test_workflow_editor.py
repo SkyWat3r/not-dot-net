@@ -1230,3 +1230,37 @@ def test_compute_warnings_flags_effect_groups_not_eligible():
     dlg._permissions = {}
     warns = dlg.compute_warnings()
     assert any("rogue" in w for w in warns)
+
+
+async def test_viewing_step_editor_does_not_assign_assignee(user: User, admin_user):
+    """Rendering the step editor must not write an assignee into the model (bug:
+    _render_sub_select used to auto-apply the first role on initial render)."""
+    from not_dot_net.backend.roles import roles_config, RolesConfig, RoleDefinition
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+
+    await roles_config.set(RolesConfig(roles={
+        "hr": RoleDefinition(label="HR"),
+        "it": RoleDefinition(label="IT"),
+    }))
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "demo": WorkflowConfig(label="Demo", steps=[
+            WorkflowStepConfig(key="s1", type="form"),
+        ]),
+    }))
+
+    captured = {}
+
+    @ui.page("/_we_assignee_render")
+    async def _page():
+        dlg = await WorkflowEditorDialog.create(admin_user)
+        captured["dlg"] = dlg
+
+    await user.open("/_we_assignee_render")
+    dlg = captured["dlg"]
+    dlg.select("demo", "s1")
+
+    step = dlg.working_copy.workflows["demo"].steps[0]
+    assert step.assignee_role is None
+    assert step.assignee_permission is None
+    assert step.assignee is None
+    assert not dlg.is_dirty()
