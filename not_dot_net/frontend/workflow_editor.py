@@ -205,11 +205,14 @@ class WorkflowEditorDialog:
     def move_step(self, wf_key: str, step_key: str, delta: int) -> None:
         wf = self.working_copy.workflows[wf_key]
         keys = [s.key for s in wf.steps]
+        if step_key not in keys:
+            raise KeyError(f"step {step_key} not found in {wf_key}")
         idx = keys.index(step_key)
         new_idx = idx + delta
         if not 0 <= new_idx < len(wf.steps):
             return
         wf.steps[idx], wf.steps[new_idx] = wf.steps[new_idx], wf.steps[idx]
+        self._refresh_tree()
         self._refresh_detail()
 
     def select(self, wf_key: str, step_key: str | None = None) -> None:

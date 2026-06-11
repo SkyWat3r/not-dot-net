@@ -1280,6 +1280,10 @@ async def test_move_field_reorders(user: User, admin_user):
     dlg.move_field("demo", "s1", 1, -1)
     fields = dlg.working_copy.workflows["demo"].steps[0].fields
     assert [f.name for f in fields] == ["f2", "f1"]
+    dlg.move_field("demo", "s1", 0, -1)  # already first: no-op
+    assert [f.name for f in fields] == ["f2", "f1"]
+    dlg.move_field("demo", "s1", 1, +1)  # already last: no-op
+    assert [f.name for f in fields] == ["f2", "f1"]
 
 
 async def test_add_workflow_and_step_accept_labels(user: User, admin_user):
