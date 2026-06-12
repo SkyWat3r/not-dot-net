@@ -25,7 +25,7 @@ from not_dot_net.frontend.workflow_step import (
 
 
 def render(user: User):
-    """Render the dashboard tab content."""
+    """Render the dashboard tab content. Returns the refresh coroutine."""
     pages_container = ui.column().classes("w-full")
     actionable_container = ui.column().classes("w-full")
     my_requests_container = ui.column().classes("w-full")
@@ -37,6 +37,7 @@ def render(user: User):
             await _render_my_requests(my_requests_container, user)
 
     ui.timer(0, refresh, once=True)
+    return refresh
 
 
 async def _render_pages_section(container):

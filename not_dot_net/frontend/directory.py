@@ -134,6 +134,7 @@ def render(current_user: User):
     show_inactive.on_value_change(lambda _: refresh())
 
     ui.timer(0, refresh, once=True)
+    return refresh
 
 
 def _format_duration(person: User) -> str:

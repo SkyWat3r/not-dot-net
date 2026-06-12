@@ -32,6 +32,7 @@ def render(user: User):
         await _render_page_list(container, user)
 
     ui.timer(0, refresh, once=True)
+    return refresh
 
 
 async def _render_page_list(container, user: User):

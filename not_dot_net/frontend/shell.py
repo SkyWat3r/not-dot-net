@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from fastapi import Depends
 from nicegui import app, ui
@@ -70,6 +70,9 @@ def setup():
         saved_tab = app.storage.user.get("active_tab")
         initial_tab = saved_tab if saved_tab in available_tabs else dashboard_label
 
+        refreshers: dict[str, Callable[[], Awaitable[None]]] = {}
+        refreshing: set[str] = set()
+
         ui.colors(primary="#0F52AC")
         with ui.header().classes("row items-center justify-between px-4").style(
             "background-color: #0F52AC"
@@ -89,8 +92,16 @@ def setup():
                 if is_superuser:
                     ui.tab(users_label, icon="manage_accounts")
 
-            def on_tab_change(e):
+            async def on_tab_change(e):
                 app.storage.user["active_tab"] = e.value
+                refresh = refreshers.get(e.value)
+                if refresh is None or e.value in refreshing:
+                    return
+                refreshing.add(e.value)
+                try:
+                    await refresh()
+                finally:
+                    refreshing.discard(e.value)
 
             tabs.on_value_change(on_tab_change)
 
@@ -113,38 +124,49 @@ def setup():
                         "flat color=white"
                     )
 
+        # Tab content is rendered once at page load; switching to a tab
+        # re-runs its refresh so the data is current. Form/edit surfaces
+        # (new request, settings, AD accounts) are excluded — refreshing
+        # them would discard in-progress input.
         with ui.tab_panels(tabs, value=initial_tab).classes("w-full"):
             with ui.tab_panel(dashboard_label):
-                render_dashboard(effective_user)
+                refreshers[dashboard_label] = render_dashboard(effective_user)
             with ui.tab_panel(people_label):
-                render_directory(effective_user)
+                refreshers[people_label] = render_directory(effective_user)
             with ui.tab_panel(bookings_label):
-                render_bookings(effective_user)
+                refreshers[bookings_label] = render_bookings(effective_user)
             with ui.tab_panel(pages_label):
-                render_pages(effective_user)
+                refreshers[pages_label] = render_pages(effective_user)
             if can_create:
                 with ui.tab_panel(new_request_label):
                     await render_new_request(effective_user)
             if is_admin:
                 with ui.tab_panel(audit_label):
-                    render_audit()
+                    refreshers[audit_label] = render_audit()
                 with ui.tab_panel(settings_label):
                     await render_settings(effective_user)
                 with ui.tab_panel(ad_accounts_label):
                     await render_ad_accounts(effective_user)
             if is_superuser:
                 with ui.tab_panel(users_label):
-                    await render_user_management(effective_user)
+                    refreshers[users_label] = await render_user_management(effective_user)
 
         if logged_in:
             from not_dot_net.backend.workflow_service import get_actionable_count
 
+            last_count: int | None = None
+
             async def update_badge():
+                nonlocal last_count
                 try:
                     count = await get_actionable_count(effective_user)
                     tab_text = f"{dashboard_label} ({count})" if count > 0 else dashboard_label
                     dashboard_tab._props["label"] = tab_text
                     dashboard_tab.update()
+                    changed = last_count is not None and count != last_count
+                    last_count = count
+                    if changed and tabs.value == dashboard_label:
+                        await refreshers[dashboard_label]()
                     title = f"({count}) NotDotNet" if count > 0 else "NotDotNet"
                     await ui.run_javascript(f"document.title = {title!r}")
                 except (RuntimeError, TimeoutError):

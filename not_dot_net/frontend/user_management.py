@@ -166,7 +166,7 @@ def _localized_columns() -> list[dict]:
     return [{**c, "label": t(c["label"])} for c in _COLUMNS]
 
 
-async def render(current_user: User) -> None:
+async def render(current_user: User):
     if not current_user.is_superuser:
         ui.label(t("forbidden")).classes("text-negative")
         return
@@ -258,6 +258,7 @@ async def render(current_user: User) -> None:
     logon_select.on_value_change(lambda _: on_filter_change())
 
     await reload()
+    return reload
 
 
 async def _open_bulk_dialog(targets: list[User], *, enabling: bool, actor: User, on_done):

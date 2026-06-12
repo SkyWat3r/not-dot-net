@@ -117,6 +117,7 @@ def render():
         await _render_log(container)
 
     ui.timer(0, refresh, once=True)
+    return refresh
 
 
 def _format_full(dt: datetime | None) -> str:
