@@ -135,7 +135,7 @@ class WorkflowEditorDialog:
                 ui.button(t("yaml_back_to_form"), icon="arrow_back",
                           on_click=self._close_yaml_view).props("flat")
             self._yaml_editor = ui.codemirror(self.dump_yaml(), language="yaml"
-                                              ).classes("w-full").style("min-height: 400px")
+                                              ).classes("w-full grow").style("min-height: 0")
 
     def _close_yaml_view(self) -> None:
         if self._yaml_editor is not None:
