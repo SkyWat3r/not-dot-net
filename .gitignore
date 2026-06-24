@@ -130,3 +130,9 @@ old-intranet-resources.json
 
 # Generated code review artifacts
 CODE_REVIEW.md
+
+# Local-only one-off: legacy personnel-archive .mdb -> clean-CSV converter
+# (operator step, kept off the server; anchored so other scripts/ stay tracked)
+/scripts/__init__.py
+/scripts/clean_personnel_archive.py
+/tests/test_clean_personnel_archive.py
