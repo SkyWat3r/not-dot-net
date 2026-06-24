@@ -297,5 +297,36 @@ def create_user(
     asyncio.run(_create())
 
 
+@app.command
+def import_personnel_csv(path: str, dry_run: bool = False):
+    """Import personnel contract history from a clean CSV.
+
+    Expects the canonical columns: first_name, last_name, email, employer, team,
+    status, start_date (ISO), end_date (ISO or blank), notes. Creates one
+    inactive user per person + one tenure per contract period. Idempotent.
+    --dry-run validates and counts without writing.
+    """
+    asyncio.run(_import_personnel_csv(path, dry_run))
+
+
+async def _import_personnel_csv(path: str, dry_run: bool):
+    from not_dot_net.backend.db import init_db, create_db_and_tables
+    from not_dot_net.backend.personnel_import import import_personnel, load_clean_csv
+    import not_dot_net.backend.tenure_service  # noqa: F401 — register UserTenure
+
+    records = load_clean_csv(path)
+    people = {(r.last_name.upper(), r.first_name.upper()) for r in records}
+    print(f"Parsed {len(records)} contract rows for {len(people)} people from {path}.")
+
+    if dry_run:
+        print("Dry run — valid CSV, nothing written.")
+        return
+
+    database_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
+    init_db(database_url)
+    await create_db_and_tables()
+    print(await import_personnel(records))
+
+
 if __name__ in {"__main__", "__mp_main__"}:
     app()

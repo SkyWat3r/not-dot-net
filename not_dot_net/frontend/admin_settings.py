@@ -12,6 +12,7 @@ from yaml import safe_dump, safe_load
 from not_dot_net.backend.app_config import get_registry
 from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.data_io import export_all, import_all
+from not_dot_net.backend.personnel_import import import_personnel, parse_clean_csv_text
 from not_dot_net.frontend.admin_roles import render as render_roles
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.widgets import chip_list_editor, keyed_chip_editor
@@ -53,6 +54,10 @@ async def render(user):
 
     with ui.expansion(t("import_export"), icon="swap_vert").classes("w-full"):
         _render_import_export(user)
+
+    if getattr(user, "is_superuser", False):
+        with ui.expansion(t("personnel_import"), icon="groups").classes("w-full"):
+            _render_personnel_import(user)
 
     registry = get_registry()
 
@@ -238,6 +243,50 @@ async def _handle_import_upload(e, *, replace: bool, user):
         "settings", "import",
         actor_id=user.id, actor_email=user.email,
         detail=json.dumps(result),
+    )
+
+
+def _render_personnel_import(user):
+    """Super-user-only: import historical contract history from a clean CSV."""
+    ui.label(t("personnel_import_help")).classes("text-sm text-grey mb-2")
+
+    async def handle_upload(e):
+        await _handle_personnel_import_upload(e, user=user)
+
+    ui.upload(
+        label=t("personnel_import_file"),
+        on_upload=handle_upload,
+        auto_upload=True,
+    ).props("accept=.csv").classes("w-full max-w-md")
+
+
+async def _handle_personnel_import_upload(e, *, user):
+    if not getattr(user, "is_superuser", False):
+        ui.notify(t("personnel_import_forbidden"), color="negative")
+        return
+    try:
+        text = (await e.file.read()).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        logger.warning("Personnel import: not UTF-8: %s", exc)
+        ui.notify(t("personnel_import_invalid"), color="negative")
+        return
+    try:
+        records = parse_clean_csv_text(text)
+    except ValueError as exc:
+        logger.warning("Personnel import: invalid CSV: %s", exc)
+        ui.notify(f"{t('personnel_import_invalid')}: {exc}", color="negative")
+        return
+    try:
+        summary = await import_personnel(records)
+    except Exception:
+        logger.exception("Personnel import failed")
+        ui.notify(t("import_failed"), color="negative")
+        return
+    ui.notify(str(summary), color="positive", multi_line=True)
+    await log_audit(
+        "settings", "import_personnel",
+        actor_id=user.id, actor_email=user.email,
+        detail=str(summary),
     )
 
 

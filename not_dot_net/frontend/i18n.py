@@ -315,6 +315,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "import_invalid_json": "Invalid JSON file",
         "import_failed": "Import failed — check server logs",
         "import_nothing": "Nothing to import — JSON has no 'pages' or 'resources' key",
+        # Personnel import (super-user only)
+        "personnel_import": "Personnel history import",
+        "personnel_import_help": "Import historical contract periods from a clean CSV (first_name, last_name, email, employer, team, status, start_date, end_date, notes). Each person becomes an inactive user with one tenure per contract. Re-running is safe.",
+        "personnel_import_file": "Import personnel CSV",
+        "personnel_import_invalid": "Invalid personnel CSV",
+        "personnel_import_forbidden": "Only super-users can import personnel history",
         # Time filter
         "time_period": "Period",
         "last_7_days": "Last 7 days",
@@ -766,6 +772,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "import_invalid_json": "Fichier JSON invalide",
         "import_failed": "Échec de l'import — vérifiez les journaux du serveur",
         "import_nothing": "Rien à importer — le JSON ne contient ni 'pages' ni 'resources'",
+        # Personnel import (super-user only)
+        "personnel_import": "Import de l'historique du personnel",
+        "personnel_import_help": "Importer les contrats historiques depuis un CSV propre (first_name, last_name, email, employer, team, status, start_date, end_date, notes). Chaque personne devient un utilisateur inactif avec une période par contrat. Réexécuter sans risque.",
+        "personnel_import_file": "Importer le CSV du personnel",
+        "personnel_import_invalid": "CSV du personnel invalide",
+        "personnel_import_forbidden": "Seuls les super-utilisateurs peuvent importer l'historique du personnel",
         # Time filter
         "time_period": "Période",
         "last_7_days": "7 derniers jours",
