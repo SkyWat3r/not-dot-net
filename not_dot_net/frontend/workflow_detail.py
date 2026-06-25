@@ -23,12 +23,13 @@ from not_dot_net.backend.workflow_service import (
     workflows_config,
 )
 from not_dot_net.config import dashboard_config
-from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.i18n import get_locale, t
 from not_dot_net.frontend.workflow_step import (
     render_approval,
     render_status_badge,
     render_step_form,
     render_step_progress,
+    resolve_display_values,
     render_urgency_badge,
 )
 
@@ -390,7 +391,8 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
 
             corrections_fn = handle_corrections if step_config.corrections_target else None
 
-            render_approval(req.data, wf, step_config, handle_approve, handle_reject, corrections_fn)
+            display_data = await resolve_display_values(wf, req.data, get_locale())
+            render_approval(display_data, wf, step_config, handle_approve, handle_reject, corrections_fn)
 
         elif step_config.type == "ad_account_creation":
             async def handle_ad_submit(action, data):

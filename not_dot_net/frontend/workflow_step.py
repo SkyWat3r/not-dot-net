@@ -7,6 +7,7 @@ from datetime import date as dt_date
 import httpx
 from nicegui import ui
 
+from not_dot_net.backend.vocabularies import resolve_terms, term_label
 from not_dot_net.backend.workflow_engine import get_completion_status
 from not_dot_net.config import WorkflowStepConfig, step_display
 from not_dot_net.frontend.i18n import TRANSLATIONS, get_locale, t
@@ -345,6 +346,26 @@ async def _render_ad_account_creation_form(step, prefill, on_submit):
             await on_submit("complete", payload)
 
         ui.button(t("complete"), on_click=submit).props("color=primary")
+
+
+async def resolve_display_values(workflow, data: dict, locale: str) -> dict[str, str]:
+    """Map a request's stored values to display strings, resolving select codes
+    (which may differ from their label, e.g. nationalities) to their label."""
+    field_keys = {
+        f.name: f.options_key
+        for s in workflow.steps for f in s.fields
+        if f.type == "select" and f.options_key
+    }
+    resolved: dict[str, str] = {}
+    for key, value in data.items():
+        options_key = field_keys.get(key)
+        if options_key and value:
+            terms = {t.code: t for t in await resolve_terms(options_key, active_only=False)}
+            term = terms.get(value)
+            resolved[key] = term_label(term, locale) if term else value
+        else:
+            resolved[key] = value
+    return resolved
 
 
 async def render_step_form(
