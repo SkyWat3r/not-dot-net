@@ -86,6 +86,17 @@ async def test_save_then_delete_unused_definition():
     assert "phone" not in cfg.definitions
 
 
+async def test_definition_usages_dedupes_repeated_ref_in_step():
+    await save_field_definition(FieldDefinition(key="phone", type="phone"))
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "wf": WorkflowConfig(label="WF", steps=[
+            WorkflowStepConfig(key="s", type="form",
+                               fields=[FieldRef(ref="phone"), FieldRef(ref="phone")]),
+        ]),
+    }))
+    assert await definition_usages("phone") == ["wf/s"]
+
+
 async def test_delete_in_use_definition_is_blocked():
     await save_field_definition(FieldDefinition(key="phone", type="phone"))
     await workflows_config.set(WorkflowsConfig(workflows={

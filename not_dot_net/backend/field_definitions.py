@@ -75,9 +75,8 @@ async def definition_usages(key: str) -> list[str]:
     usages: list[str] = []
     for wf_key, wf in wf_cfg.workflows.items():
         for step in wf.steps:
-            for item in step.fields:
-                if isinstance(item, FieldRef) and item.ref == key:
-                    usages.append(f"{wf_key}/{step.key}")
+            if any(isinstance(item, FieldRef) and item.ref == key for item in step.fields):
+                usages.append(f"{wf_key}/{step.key}")
     return usages
 
 
