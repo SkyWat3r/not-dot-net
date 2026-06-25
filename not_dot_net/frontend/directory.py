@@ -696,17 +696,25 @@ def _render_tenure_row(tenure, is_admin: bool, on_refresh, person: User, current
             ui.button(icon="delete", on_click=do_delete).props("flat dense round size=xs color=negative")
 
 
+async def _tenure_options(locale: str) -> tuple[dict[str, str], dict[str, str]]:
+    """(status_options, employer_options) for the tenure dialogs, from the registry."""
+    from not_dot_net.backend.vocabularies import field_options
+    status = (await field_options("employment_statuses", locale)).options
+    employer = (await field_options("employers", locale)).options
+    return status, employer
+
+
 async def _tenure_add_dialog(person: User, current_user: User, on_refresh):
     from not_dot_net.backend.tenure_service import add_tenure as _add
-    from not_dot_net.config import org_config
+    from not_dot_net.frontend.i18n import get_locale
 
-    cfg = await org_config.get()
+    status_opts, employer_opts = await _tenure_options(get_locale())
 
     dialog = ui.dialog()
     with dialog, ui.card().classes("w-96"):
         ui.label(t("add_tenure")).classes("text-h6")
-        status_input = ui.select(cfg.employment_statuses, label=t("status")).props("outlined dense stack-label")
-        employer_input = ui.select(cfg.employers, label=t("employer")).props("outlined dense stack-label")
+        status_input = ui.select(status_opts, label=t("status")).props("outlined dense stack-label")
+        employer_input = ui.select(employer_opts, label=t("employer")).props("outlined dense stack-label")
         start_input = ui.input(t("start_date"), placeholder="YYYY-MM-DD").props("outlined dense stack-label")
         end_input = ui.input(t("end_date"), placeholder="YYYY-MM-DD (optional)").props("outlined dense stack-label")
         notes_input = ui.input(t("tenure_notes")).props("outlined dense stack-label")
@@ -748,9 +756,9 @@ async def _tenure_add_dialog(person: User, current_user: User, on_refresh):
 
 async def _tenure_edit_dialog(tenure_id, person: User, current_user: User, on_refresh):
     from not_dot_net.backend.tenure_service import update_tenure as _update, list_tenures as _list
-    from not_dot_net.config import org_config
+    from not_dot_net.frontend.i18n import get_locale
 
-    cfg = await org_config.get()
+    status_opts, employer_opts = await _tenure_options(get_locale())
     tenures = await _list(person.id)
     tenure = next((ten for ten in tenures if ten.id == tenure_id), None)
     if tenure is None:
@@ -759,8 +767,8 @@ async def _tenure_edit_dialog(tenure_id, person: User, current_user: User, on_re
     dialog = ui.dialog()
     with dialog, ui.card().classes("w-96"):
         ui.label(t("edit_tenure")).classes("text-h6")
-        status_input = ui.select(cfg.employment_statuses, value=tenure.status, label=t("status")).props("outlined dense stack-label")
-        employer_input = ui.select(cfg.employers, value=tenure.employer, label=t("employer")).props("outlined dense stack-label")
+        status_input = ui.select(status_opts, value=tenure.status, label=t("status")).props("outlined dense stack-label")
+        employer_input = ui.select(employer_opts, value=tenure.employer, label=t("employer")).props("outlined dense stack-label")
         start_input = ui.input(t("start_date"), value=str(tenure.start_date)).props("outlined dense stack-label")
         end_input = ui.input(t("end_date"), value=str(tenure.end_date) if tenure.end_date else "").props("outlined dense stack-label")
         notes_input = ui.input(t("tenure_notes"), value=tenure.notes or "").props("outlined dense stack-label")

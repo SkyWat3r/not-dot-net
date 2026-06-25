@@ -317,3 +317,20 @@ async def test_onboarding_completion_uses_returning_user_id_for_tenure_target(mo
     assert len(tenures) == 1
     assert tenures[0].status == "CDD"
     assert tenures[0].employer == "Polytechnique"
+
+
+async def test_tenure_options_from_registry():
+    from not_dot_net.backend.vocabularies import (
+        vocabularies_config, VocabulariesConfig, StoredVocabulary, VocabularyTerm)
+    await vocabularies_config.set(VocabulariesConfig(vocabularies={
+        "employment_statuses": StoredVocabulary(
+            key="employment_statuses", label={"en": "S"},
+            terms=[VocabularyTerm(code="PostDoc", labels={"en": "PostDoc"})]),
+        "employers": StoredVocabulary(
+            key="employers", label={"en": "E"},
+            terms=[VocabularyTerm(code="CNRS", labels={"en": "CNRS"})]),
+    }))
+    from not_dot_net.frontend.directory import _tenure_options
+    status, employer = await _tenure_options("en")
+    assert status == {"PostDoc": "PostDoc"}
+    assert employer == {"CNRS": "CNRS"}
