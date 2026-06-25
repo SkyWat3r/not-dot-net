@@ -321,6 +321,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "personnel_import_file": "Import personnel CSV",
         "personnel_import_invalid": "Invalid personnel CSV",
         "personnel_import_forbidden": "Only super-users can import personnel history",
+        # Vocabularies editor
+        "vocabularies": "Vocabularies",
+        "vocab_system": "system",
+        "vocab_new": "New vocabulary",
+        "vocab_name": "Name",
+        "vocab_confirm_delete": "Delete vocabulary '{key}'?",
+        "vocab_allow_custom": "Allow custom entries",
+        "vocab_code": "Code",
+        "vocab_add_term": "Add term",
         # Time filter
         "time_period": "Period",
         "last_7_days": "Last 7 days",
@@ -778,6 +787,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "personnel_import_file": "Importer le CSV du personnel",
         "personnel_import_invalid": "CSV du personnel invalide",
         "personnel_import_forbidden": "Seuls les super-utilisateurs peuvent importer l'historique du personnel",
+        # Vocabularies editor
+        "vocabularies": "Vocabulaires",
+        "vocab_system": "système",
+        "vocab_new": "Nouveau vocabulaire",
+        "vocab_name": "Nom",
+        "vocab_confirm_delete": "Supprimer le vocabulaire « {key} » ?",
+        "vocab_allow_custom": "Autoriser les saisies libres",
+        "vocab_code": "Code",
+        "vocab_add_term": "Ajouter un terme",
         # Time filter
         "time_period": "Période",
         "last_7_days": "7 derniers jours",
