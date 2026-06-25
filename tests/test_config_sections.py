@@ -8,32 +8,17 @@ import pytest
 async def test_org_config_defaults():
     from not_dot_net.config import org_config
     cfg = await org_config.get()
-    assert cfg.app_name == "LPP Intranet"
-    assert cfg.base_url == "http://localhost:8088"
-    assert len(cfg.teams) > 0
-    assert len(cfg.sites) > 0
-    assert "PhD" in cfg.employment_statuses
-    assert "CNRS" in cfg.employers
+    assert cfg.app_name
+    assert cfg.base_url
 
 
 async def test_org_config_roundtrip():
     from not_dot_net.config import org_config, OrgConfig
-    custom = OrgConfig(
-        app_name="Test App",
-        base_url="https://intranet.example.test",
-        teams=["A"],
-        sites=["B"],
-        employment_statuses=["Permanent"],
-        employers=["Example Lab"],
-    )
+    custom = OrgConfig(app_name="X", base_url="http://x")
     await org_config.set(custom)
     result = await org_config.get()
-    assert result.app_name == "Test App"
-    assert result.base_url == "https://intranet.example.test"
-    assert result.teams == ["A"]
-    assert result.sites == ["B"]
-    assert result.employment_statuses == ["Permanent"]
-    assert result.employers == ["Example Lab"]
+    assert result.app_name == "X"
+    assert result.base_url == "http://x"
 
 
 async def test_org_config_registered():

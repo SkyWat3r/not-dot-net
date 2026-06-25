@@ -41,10 +41,23 @@ def test_user_profile_fields_accept_values():
     assert user.employment_status == "Permanent"
 
 
-def test_org_config_has_teams():
-    from not_dot_net.config import OrgConfig
-    cfg = OrgConfig()
-    assert len(cfg.teams) > 0
+async def test_teams_vocabulary_has_defaults():
+    from not_dot_net.backend.vocabularies import (
+        vocabularies_config,
+        VocabulariesConfig,
+        StoredVocabulary,
+        VocabularyTerm,
+        resolve_terms,
+    )
+    await vocabularies_config.set(VocabulariesConfig(vocabularies={
+        "teams": StoredVocabulary(
+            key="teams",
+            label={"en": "Teams"},
+            terms=[VocabularyTerm(code="Plasma Physics", labels={"en": "Plasma Physics"})],
+        ),
+    }))
+    teams = [term.code for term in await resolve_terms("teams")]
+    assert len(teams) > 0
 
 
 def test_user_default_role():

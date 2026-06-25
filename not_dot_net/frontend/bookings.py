@@ -20,7 +20,7 @@ from not_dot_net.backend.booking_service import (
 from not_dot_net.config import bookings_config
 from not_dot_net.backend.db import User, resolve_user_names
 from not_dot_net.backend.permissions import has_permissions
-from not_dot_net.config import org_config
+from not_dot_net.backend.vocabularies import resolve_terms
 from not_dot_net.frontend.i18n import t
 
 RESOURCE_TYPES = ["desktop", "laptop"]
@@ -138,8 +138,7 @@ async def _render_bookings(container, user: User, filter_range=None):
         def _range_label(r):
             return f"{r['from']} → {r['to']}" if isinstance(r, dict) else ""
 
-        org = await org_config.get()
-        sites = org.sites
+        sites = [term.code for term in await resolve_terms("sites")]
 
         with ui.row().classes("items-center gap-2 mb-3"):
             ui.icon("date_range", size="sm").classes("text-primary")
@@ -267,8 +266,7 @@ async def _render_resource_list(outer_container, area, resources, user, is_admin
                 names.get(booking.user_id, "?")
             )
 
-    org = await org_config.get()
-    sites = org.sites
+    sites = [term.code for term in await resolve_terms("sites")]
     state = {"expanded_id": None}
 
     with area:
@@ -548,11 +546,10 @@ async def _show_resource_dialog(outer_container, user, resource=None):
             label=t("resource_type"),
         ).props("outlined dense").classes("w-full")
 
-        org = await org_config.get()
-        sites = org.sites
+        sites = [term.code for term in await resolve_terms("sites")]
         location_select = ui.select(
             options=sites,
-            value=resource.location if editing and resource.location in sites else sites[0],
+            value=resource.location if editing and resource.location in sites else (sites[0] if sites else None),
             label=t("resource_location"),
         ).props("outlined dense").classes("w-full")
 

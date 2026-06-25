@@ -5,7 +5,7 @@ The server only ingests a clean, canonical CSV with these columns:
     first_name, last_name, email, employer, team, status, start_date, end_date, notes
 
 - dates are ISO `YYYY-MM-DD`; an empty `end_date` means the contract is open;
-- `status` is already one of OrgConfig.employment_statuses;
+- `status` is already one of the "employment_statuses" vocabulary;
 - `email` may be blank (a synthetic `@archive.invalid` address is generated).
 
 Each distinct person becomes one inactive local `User` (kept out of the

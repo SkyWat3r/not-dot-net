@@ -76,25 +76,6 @@ class WorkflowConfig(BaseModel):
 class OrgConfig(BaseModel):
     app_name: str = "LPP Intranet"
     base_url: str = "http://localhost:8088"
-    teams: list[str] = [
-        "Plasma Physics",
-        "Instrumentation",
-        "Space Weather",
-        "Theory & Simulation",
-        "Administration",
-    ]
-    sites: list[str] = ["Palaiseau", "Jussieu"]
-    employment_statuses: list[str] = ["CDD", "CDI", "Intern", "PhD", "PostDoc", "Visiting Researcher"]
-    employers: list[str] = ["CNRS", "Sorbonne Université", "Polytechnique", "CNES", "Other"]
-    transport_modes: list[str] = ["Train", "Avion", "Voiture personnelle", "Voiture de service", "Autre"]
-    funding_sources: list[str] = [
-        "Sorbonne Université",
-        "Polytechnique",
-        "CNES",
-        "ANR",
-        "ESA",
-        "Autre",
-    ]
 
 
 org_config = section("org", OrgConfig, label="Organization")

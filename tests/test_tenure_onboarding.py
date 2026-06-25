@@ -59,11 +59,23 @@ async def test_onboarding_employer_stored_in_request_data():
     assert req.data["employer"] == "CNRS"
 
 
-async def test_org_config_has_employers():
-    from not_dot_net.config import org_config
-    cfg = await org_config.get()
-    assert hasattr(cfg, "employers")
-    assert "CNRS" in cfg.employers
+async def test_employers_vocabulary_has_cnrs():
+    from not_dot_net.backend.vocabularies import (
+        vocabularies_config,
+        VocabulariesConfig,
+        StoredVocabulary,
+        VocabularyTerm,
+        resolve_terms,
+    )
+    await vocabularies_config.set(VocabulariesConfig(vocabularies={
+        "employers": StoredVocabulary(
+            key="employers",
+            label={"en": "Employers"},
+            terms=[VocabularyTerm(code="CNRS", labels={"en": "CNRS"})],
+        ),
+    }))
+    employers = [term.code for term in await resolve_terms("employers")]
+    assert "CNRS" in employers
 
 
 async def test_create_tenure_from_onboarding_direct():

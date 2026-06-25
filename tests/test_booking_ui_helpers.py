@@ -75,3 +75,29 @@ def test_format_booking_period_shows_inclusive_last_day():
     from not_dot_net.frontend.bookings import _format_booking_period
 
     assert _format_booking_period(date(2026, 6, 10), date(2026, 6, 13)) == "2026-06-10 → 2026-06-12"
+
+
+async def test_bookings_sites_read_from_vocabulary_registry():
+    """TDD: after rewiring, sites in bookings come from the vocabulary registry,
+    not from OrgConfig.sites. Seeding a custom vocabulary must be reflected."""
+    from not_dot_net.backend.vocabularies import (
+        vocabularies_config,
+        VocabulariesConfig,
+        StoredVocabulary,
+        VocabularyTerm,
+        resolve_terms,
+    )
+
+    await vocabularies_config.set(VocabulariesConfig(vocabularies={
+        "sites": StoredVocabulary(
+            key="sites",
+            label={"en": "Sites"},
+            terms=[
+                VocabularyTerm(code="TestSite1", labels={"en": "TestSite1"}),
+                VocabularyTerm(code="TestSite2", labels={"en": "TestSite2"}),
+            ],
+        ),
+    }))
+
+    sites = [t.code for t in await resolve_terms("sites")]
+    assert sites == ["TestSite1", "TestSite2"]
