@@ -54,3 +54,37 @@ async def resolve_step_fields(
         else:
             resolved.append(item)
     return resolved
+
+
+class FieldDefinitionInUse(Exception):
+    def __init__(self, key: str, usages: list[str]):
+        self.key = key
+        self.usages = usages
+        super().__init__(f"field definition '{key}' is used by: {', '.join(usages)}")
+
+
+async def save_field_definition(defn: FieldDefinition) -> None:
+    cfg = await field_definitions_config.get()
+    cfg.definitions[defn.key] = defn
+    await field_definitions_config.set(cfg)
+
+
+async def definition_usages(key: str) -> list[str]:
+    from not_dot_net.backend.workflow_service import workflows_config
+    wf_cfg = await workflows_config.get()
+    usages: list[str] = []
+    for wf_key, wf in wf_cfg.workflows.items():
+        for step in wf.steps:
+            for item in step.fields:
+                if isinstance(item, FieldRef) and item.ref == key:
+                    usages.append(f"{wf_key}/{step.key}")
+    return usages
+
+
+async def delete_field_definition(key: str) -> None:
+    usages = await definition_usages(key)
+    if usages:
+        raise FieldDefinitionInUse(key, usages)
+    cfg = await field_definitions_config.get()
+    cfg.definitions.pop(key, None)
+    await field_definitions_config.set(cfg)

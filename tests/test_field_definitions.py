@@ -1,9 +1,14 @@
 import logging
 
-from not_dot_net.config import FieldConfig, FieldRef, WorkflowStepConfig, resolve_field_ref
+import pytest
+
+from not_dot_net.config import FieldConfig, FieldRef, WorkflowStepConfig, resolve_field_ref, WorkflowConfig
 from not_dot_net.backend.field_definitions import (
     FieldDefinition, FieldDefinitionsConfig, resolve_step_fields,
+    field_definitions_config, save_field_definition, delete_field_definition,
+    FieldDefinitionInUse, definition_usages,
 )
+from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
 
 
 def test_resolve_inherits_unset_properties():
@@ -70,3 +75,26 @@ async def test_resolve_step_fields_drops_dangling_ref(caplog):
         resolved = await resolve_step_fields(step, cfg=cfg)
     assert [f.name for f in resolved] == ["note"]
     assert "gone" in caplog.text
+
+
+async def test_save_then_delete_unused_definition():
+    await save_field_definition(FieldDefinition(key="phone", type="phone"))
+    cfg = await field_definitions_config.get()
+    assert "phone" in cfg.definitions
+    await delete_field_definition("phone")
+    cfg = await field_definitions_config.get()
+    assert "phone" not in cfg.definitions
+
+
+async def test_delete_in_use_definition_is_blocked():
+    await save_field_definition(FieldDefinition(key="phone", type="phone"))
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "onboard": WorkflowConfig(label="Onboard", steps=[
+            WorkflowStepConfig(key="info", type="form", fields=[FieldRef(ref="phone")]),
+        ]),
+    }))
+    with pytest.raises(FieldDefinitionInUse) as exc:
+        await delete_field_definition("phone")
+    assert "onboard/info" in exc.value.usages
+    cfg = await field_definitions_config.get()
+    assert "phone" in cfg.definitions   # not deleted
