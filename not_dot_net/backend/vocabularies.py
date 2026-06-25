@@ -188,6 +188,9 @@ async def ensure_vocabularies_seeded() -> None:
         vocabularies[key] = StoredVocabulary(
             key=key,
             label=_SEED_LABELS[key],
-            terms=[VocabularyTerm(code=v, labels={"en": v}) for v in values],
+            # Legacy values are untranslated codes: leave labels empty so they
+            # display via the code in every locale (term_label falls back to it),
+            # rather than mislabelling French/mixed values as English.
+            terms=[VocabularyTerm(code=v, labels={}) for v in values],
         )
     await vocabularies_config.set(VocabulariesConfig(vocabularies=vocabularies))
