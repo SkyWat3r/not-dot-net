@@ -464,14 +464,43 @@ async def test_delete_field(user: User, admin_user):
     assert [f.name for f in fields] == ["y"]
 
 
-async def test_org_list_keys_introspected():
-    """The options_key dropdown is populated from OrgConfig list[str] fields."""
-    from not_dot_net.frontend.workflow_editor import _org_list_field_names
-    keys = _org_list_field_names()
-    assert "teams" in keys
-    assert "sites" in keys
-    assert "employment_statuses" in keys
-    assert "app_name" not in keys  # not a list[str]
+async def test_options_key_picker_lists_registry_keys(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    from not_dot_net.backend.vocabularies import (
+        vocabularies_config, VocabulariesConfig, StoredVocabulary)
+    await vocabularies_config.set(VocabulariesConfig(vocabularies={
+        "employment_statuses": StoredVocabulary(key="employment_statuses", label={"en": "S"}),
+    }))
+    captured = {}
+
+    @ui.page("/_vk1")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_vk1")
+    keys = captured["dlg"]._vocab_keys
+    assert "employment_statuses" in keys   # stored
+    assert "nationalities" in keys          # built-in
+    assert "roles" in keys                   # built-in
+
+
+async def test_compute_warnings_flags_unknown_options_key(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    from not_dot_net.backend.vocabularies import (
+        vocabularies_config, VocabulariesConfig, StoredVocabulary)
+    await vocabularies_config.set(VocabulariesConfig(vocabularies={
+        "teams": StoredVocabulary(key="teams", label={"en": "T"})}))
+    await workflows_config.set(WorkflowsConfig(workflows={"wf": WorkflowConfig(
+        label="WF", steps=[WorkflowStepConfig(key="s", type="form", fields=[
+            FieldConfig(name="f", type="select", options_key="ghost")])])}))
+    captured = {}
+
+    @ui.page("/_vk2")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_vk2")
+    assert any("options_key 'ghost'" in w for w in captured["dlg"].compute_warnings())
 
 
 async def test_yaml_dump_reflects_working_copy(user: User, admin_user):
@@ -1209,6 +1238,7 @@ def test_compute_warnings_flags_effect_unknown_action():
     dlg._eligible_groups_snapshot = {}
     dlg._roles = {}
     dlg._permissions = {}
+    dlg._vocab_keys = []
     warns = dlg.compute_warnings()
     assert any("nonexistent" in w for w in warns)
 
@@ -1228,6 +1258,7 @@ def test_compute_warnings_flags_effect_groups_not_eligible():
     dlg._eligible_groups_snapshot = {"CN=ok,DC=x": "ok"}
     dlg._roles = {}
     dlg._permissions = {}
+    dlg._vocab_keys = []
     warns = dlg.compute_warnings()
     assert any("rogue" in w for w in warns)
 

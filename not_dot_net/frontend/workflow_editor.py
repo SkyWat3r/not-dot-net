@@ -13,7 +13,7 @@ from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.permissions import get_permissions
 from not_dot_net.backend.roles import roles_config
 from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
-from not_dot_net.config import FieldConfig, NotificationRuleConfig, OrgConfig, StepEffectConfig, WorkflowConfig, WorkflowStepConfig
+from not_dot_net.config import FieldConfig, NotificationRuleConfig, StepEffectConfig, WorkflowConfig, WorkflowStepConfig
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_editor_options import (
     assignee_options,
@@ -27,13 +27,6 @@ from not_dot_net.frontend.workflow_editor_options import (
 logger = logging.getLogger(__name__)
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9_]*$")
-
-
-def _org_list_field_names() -> list[str]:
-    return [
-        name for name, info in OrgConfig.model_fields.items()
-        if info.annotation == list[str]
-    ]
 
 
 def _validate_slug(key: str) -> None:
@@ -89,6 +82,8 @@ class WorkflowEditorDialog:
         from not_dot_net.backend.ad_account_config import ad_account_config
         cfg = await ad_account_config.get()
         instance._eligible_groups_snapshot = {dn: dn for dn in cfg.eligible_groups}
+        from not_dot_net.backend.vocabularies import list_vocabularies
+        instance._vocab_keys = [v.key for v in await list_vocabularies()]
         instance._build()
         return instance
 
@@ -771,7 +766,7 @@ class WorkflowEditorDialog:
             if not step.fields:
                 ui.label(t("empty_fields")).classes("text-grey text-sm")
 
-            org_keys = [None, *_org_list_field_names()]
+            org_keys = [None, *self._vocab_keys]
             for idx, field in enumerate(step.fields):
                 with ui.column().classes("w-full"):
                     with ui.row().classes("w-full items-center gap-2 no-wrap"):
@@ -975,7 +970,7 @@ class WorkflowEditorDialog:
 
     def compute_warnings(self) -> list[str]:
         warnings: list[str] = []
-        org_list_keys = set(_org_list_field_names())
+        org_list_keys = set(self._vocab_keys)
         for wf_key, wf in self.working_copy.workflows.items():
             if not wf.steps:
                 warnings.append(f"[{wf_key}] workflow has no steps — it will be hidden from the new-request page")
@@ -1000,7 +995,7 @@ class WorkflowEditorDialog:
                 for f in step.fields:
                     if f.options_key and f.options_key not in org_list_keys:
                         warnings.append(
-                            f"[{wf_key}/{step.key}/{f.name}] options_key '{f.options_key}' is not an OrgConfig list field"
+                            f"[{wf_key}/{step.key}/{f.name}] options_key '{f.options_key}' is not a known vocabulary"
                         )
                 checkbox_names = {f.name for f in step.fields if f.type == "checkbox"}
                 for f in step.fields:
