@@ -109,12 +109,12 @@ def _open_term_editor(vocabulary: StoredVocabulary, on_done) -> None:
                         ui.input(t("vocab_code"), value=term.code,
                                  on_change=lambda e, i=i: _set(working, i, "code", e.value)
                                  ).props("outlined dense")
-                        ui.input("EN", value=term.labels.get("en", ""),
+                        ui.input(t("vocab_term_label_en"), value=term.labels.get("en", ""),
                                  on_change=lambda e, i=i: _set_label(working, i, "en", e.value)
-                                 ).props("outlined dense")
-                        ui.input("FR", value=term.labels.get("fr", ""),
+                                 ).props('outlined dense placeholder="optional"')
+                        ui.input(t("vocab_term_label_fr"), value=term.labels.get("fr", ""),
                                  on_change=lambda e, i=i: _set_label(working, i, "fr", e.value)
-                                 ).props("outlined dense")
+                                 ).props('outlined dense placeholder="optional"')
                         ui.switch(t("active"), value=term.active,
                                   on_change=lambda e, i=i: _set(working, i, "active", e.value))
                         up_btn = ui.button(icon="keyboard_arrow_up",

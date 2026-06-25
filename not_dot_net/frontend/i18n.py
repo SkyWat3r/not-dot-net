@@ -329,7 +329,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "vocab_name_required": "Name is required",
         "vocab_confirm_delete": "Delete vocabulary '{key}'?",
         "vocab_allow_custom": "Allow custom entries",
-        "vocab_code": "Code",
+        "vocab_code": "Value",
+        "vocab_term_label_en": "Label (EN)",
+        "vocab_term_label_fr": "Label (FR)",
         "vocab_add_term": "Add term",
         # Time filter
         "time_period": "Period",
@@ -796,7 +798,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "vocab_name_required": "Le nom est requis",
         "vocab_confirm_delete": "Supprimer le vocabulaire « {key} » ?",
         "vocab_allow_custom": "Autoriser les saisies libres",
-        "vocab_code": "Code",
+        "vocab_code": "Valeur",
+        "vocab_term_label_en": "Libellé (EN)",
+        "vocab_term_label_fr": "Libellé (FR)",
         "vocab_add_term": "Ajouter un terme",
         # Time filter
         "time_period": "Période",
