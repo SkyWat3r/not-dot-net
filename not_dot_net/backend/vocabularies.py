@@ -79,3 +79,57 @@ BUILTIN_VOCABULARIES: dict[str, BuiltinVocabulary] = {
         load_terms=_load_roles,
     ),
 }
+
+
+@dataclass(frozen=True)
+class FieldOptions:
+    options: dict[str, str]    # code -> display label
+    allow_custom: bool
+
+
+@dataclass(frozen=True)
+class VocabularyView:
+    key: str
+    label: dict[str, str]
+    source: str                # "stored" | "builtin"
+    editable: bool
+
+
+async def resolve_terms(key: str, *, active_only: bool = True) -> list[VocabularyTerm]:
+    """Terms for a key: stored registry first, then built-in providers, else []."""
+    cfg = await vocabularies_config.get()
+    stored = cfg.vocabularies.get(key)
+    if stored is not None:
+        terms = stored.terms
+    else:
+        builtin = BUILTIN_VOCABULARIES.get(key)
+        if builtin is None:
+            return []
+        terms = await builtin.load_terms()
+    return [t for t in terms if t.active] if active_only else list(terms)
+
+
+async def field_options(key: str, locale: str) -> FieldOptions:
+    """Render spec for a select bound to `key`: {code: label} + allow_custom."""
+    cfg = await vocabularies_config.get()
+    stored = cfg.vocabularies.get(key)
+    allow_custom = stored.allow_custom if stored is not None else False
+    terms = await resolve_terms(key)
+    return FieldOptions(
+        options={t.code: term_label(t, locale) for t in terms},
+        allow_custom=allow_custom,
+    )
+
+
+async def list_vocabularies() -> list[VocabularyView]:
+    """All vocabularies for admin/editor: stored (editable) + built-ins."""
+    cfg = await vocabularies_config.get()
+    views = [
+        VocabularyView(key=v.key, label=v.label, source="stored", editable=True)
+        for v in cfg.vocabularies.values()
+    ]
+    views += [
+        VocabularyView(key=b.key, label=b.label, source="builtin", editable=b.editable)
+        for b in BUILTIN_VOCABULARIES.values() if b.key not in cfg.vocabularies
+    ]
+    return views
