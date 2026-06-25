@@ -118,6 +118,10 @@ def create_app(
             from not_dot_net.backend.seeding import seed_fake_users
             await seed_fake_users()
 
+        from not_dot_net.backend.vocabularies import ensure_vocabularies_seeded
+        await ensure_vocabularies_seeded()
+        logger.info("Vocabularies seeded")
+
         from not_dot_net.backend.mail_outbox import run_outbox_worker
         _outbox_task["task"] = asyncio.create_task(run_outbox_worker())
         logger.info("Mail outbox worker started")

@@ -70,6 +70,14 @@ async def setup_db(request, monkeypatch):
         monkeypatch.setattr(app_module, "ensure_default_admin", _noop_default_admin)
         monkeypatch.setattr(mail_outbox_module, "run_outbox_worker", _noop_worker)
 
+        import not_dot_net.backend.vocabularies as vocabularies_module
+
+        async def _noop_seed_vocabularies():
+            return None
+
+        monkeypatch.setattr(vocabularies_module, "ensure_vocabularies_seeded",
+                            _noop_seed_vocabularies)
+
     import not_dot_net.backend.workflow_models  # noqa: F401
     import not_dot_net.backend.booking_models  # noqa: F401
     import not_dot_net.backend.audit  # noqa: F401

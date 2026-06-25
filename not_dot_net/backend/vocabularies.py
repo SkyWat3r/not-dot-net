@@ -12,7 +12,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from not_dot_net.backend.app_config import section
+from not_dot_net.backend.app_config import AppSetting, section
+from not_dot_net.backend.db import session_scope
 
 _NATIONALITIES_PATH = Path(__file__).parent / "data" / "nationalities.json"
 
@@ -136,3 +137,57 @@ async def list_vocabularies() -> list[VocabularyView]:
         for b in BUILTIN_VOCABULARIES.values() if b.key not in cfg.vocabularies
     ]
     return views
+
+
+# ---------------------------------------------------------------------------
+# Startup seeding — fold legacy OrgConfig lists into the registry
+# ---------------------------------------------------------------------------
+
+_SEED_DEFAULTS: dict[str, list[str]] = {
+    "teams": ["Plasma Physics", "Instrumentation", "Space Weather",
+              "Theory & Simulation", "Administration"],
+    "sites": ["Palaiseau", "Jussieu"],
+    "employment_statuses": ["CDD", "CDI", "Intern", "PhD", "PostDoc", "Visiting Researcher"],
+    "employers": ["CNRS", "Sorbonne Université", "Polytechnique", "CNES", "Other"],
+    "transport_modes": ["Train", "Avion", "Voiture personnelle",
+                        "Voiture de service", "Autre"],
+    "funding_sources": ["Sorbonne Université", "Polytechnique", "CNES",
+                        "ANR", "ESA", "Autre"],
+}
+
+_SEED_LABELS: dict[str, dict[str, str]] = {
+    "teams": {"en": "Teams", "fr": "Équipes"},
+    "sites": {"en": "Sites", "fr": "Sites"},
+    "employment_statuses": {"en": "Employment statuses", "fr": "Statuts d'emploi"},
+    "employers": {"en": "Employers", "fr": "Employeurs"},
+    "transport_modes": {"en": "Transport modes", "fr": "Modes de transport"},
+    "funding_sources": {"en": "Funding sources", "fr": "Sources de financement"},
+}
+
+
+async def _read_raw_org_lists() -> dict:
+    async with session_scope() as session:
+        row = await session.get(AppSetting, "org")
+        return dict(row.value) if row and isinstance(row.value, dict) else {}
+
+
+async def ensure_vocabularies_seeded() -> None:
+    """One-time migration: fold the legacy OrgConfig lists into the registry.
+
+    Reads the raw `org` row so admin-customized values survive; falls back to
+    embedded defaults. Idempotent — a no-op once the registry is populated.
+    """
+    cfg = await vocabularies_config.get()
+    if cfg.vocabularies:
+        return
+    raw = await _read_raw_org_lists()
+    vocabularies = {}
+    for key, default in _SEED_DEFAULTS.items():
+        values = raw.get(key) if isinstance(raw.get(key), list) else None
+        values = values or default
+        vocabularies[key] = StoredVocabulary(
+            key=key,
+            label=_SEED_LABELS[key],
+            terms=[VocabularyTerm(code=v, labels={"en": v}) for v in values],
+        )
+    await vocabularies_config.set(VocabulariesConfig(vocabularies=vocabularies))
