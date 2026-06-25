@@ -1,5 +1,9 @@
+import logging
+
 from not_dot_net.config import FieldConfig, FieldRef, WorkflowStepConfig, resolve_field_ref
-from not_dot_net.backend.field_definitions import FieldDefinition
+from not_dot_net.backend.field_definitions import (
+    FieldDefinition, FieldDefinitionsConfig, resolve_step_fields,
+)
 
 
 def test_resolve_inherits_unset_properties():
@@ -42,11 +46,6 @@ def test_step_fields_union_deserializes_both_shapes():
     assert step.fields[1].required is True
 
 
-from not_dot_net.backend.field_definitions import (
-    FieldDefinitionsConfig, resolve_step_fields,
-)
-
-
 async def test_resolve_step_fields_mixes_inline_and_refs_in_order():
     cfg = FieldDefinitionsConfig(definitions={
         "phone": FieldDefinition(key="phone", type="phone", label="Phone"),
@@ -61,11 +60,13 @@ async def test_resolve_step_fields_mixes_inline_and_refs_in_order():
     assert resolved[1].required is True
 
 
-async def test_resolve_step_fields_drops_dangling_ref():
+async def test_resolve_step_fields_drops_dangling_ref(caplog):
     cfg = FieldDefinitionsConfig(definitions={})
     step = WorkflowStepConfig(key="s", type="form", fields=[
         FieldConfig(name="note", type="text"),
         FieldRef(ref="gone"),
     ])
-    resolved = await resolve_step_fields(step, cfg=cfg)
+    with caplog.at_level(logging.WARNING):
+        resolved = await resolve_step_fields(step, cfg=cfg)
     assert [f.name for f in resolved] == ["note"]
+    assert "gone" in caplog.text
