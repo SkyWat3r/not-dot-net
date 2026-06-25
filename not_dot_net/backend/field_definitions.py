@@ -1,0 +1,34 @@
+"""App-wide reusable field definitions — Vocab registry Phase 2.
+
+A FieldDefinition describes a workflow field once (type, label, required,
+vocabulary binding, encrypted, layout). Workflow steps reference it by key
+(via config.FieldRef) and resolve it live. Stored in one app_setting JSON
+row, the ConfigSection idiom — no table, no migration.
+"""
+
+import logging
+
+from pydantic import BaseModel, Field
+
+from not_dot_net.backend.app_config import section
+from not_dot_net.config import FieldConfig, FieldRef, WorkflowStepConfig, resolve_field_ref
+
+_log = logging.getLogger(__name__)
+
+
+class FieldDefinition(BaseModel):
+    key: str                       # immutable registry key; also the resolved field's data name
+    type: str                      # text | email | textarea | date | select | file | phone | location | checkbox
+    label: str = ""
+    required: bool = False
+    options_key: str | None = None # vocabulary binding (select), resolved via the Phase-1 registry
+    encrypted: bool = False
+    half_width: bool = False
+
+
+class FieldDefinitionsConfig(BaseModel):
+    definitions: dict[str, FieldDefinition] = Field(default_factory=dict)
+
+
+field_definitions_config = section("field_definitions", FieldDefinitionsConfig,
+                                   label="Field definitions")

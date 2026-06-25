@@ -1,8 +1,11 @@
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 from not_dot_net.backend.app_config import section
+
+if TYPE_CHECKING:
+    from not_dot_net.backend.field_definitions import FieldDefinition
 
 
 # --- Workflow schema models (imported by notifications.py, workflow_engine.py, etc.) ---
@@ -25,6 +28,42 @@ def is_field_visible(field: FieldConfig, data: dict) -> bool:
     if not rule:
         return True
     return all(data.get(k) == v for k, v in rule.items())
+
+
+class FieldRef(BaseModel):
+    """A workflow step's reference to a shared FieldDefinition.
+
+    Every override is Optional; None means "inherit live from the definition".
+    `name` is intentionally absent — a reference's resolved name is the
+    definition key, so a shared field always stores under one data key.
+    """
+    ref: str
+    type: str | None = None
+    label: str | None = None
+    required: bool | None = None
+    options_key: str | None = None
+    encrypted: bool | None = None
+    half_width: bool | None = None
+    visible_when: dict[str, Any] | None = None   # step-local only (never in the definition)
+
+
+def resolve_field_ref(ref: "FieldRef", defn: "FieldDefinition") -> FieldConfig:
+    """Merge a reference over its definition into a concrete FieldConfig."""
+    def pick(override, base):
+        return override if override is not None else base
+    return FieldConfig(
+        name=defn.key,
+        type=pick(ref.type, defn.type),
+        label=pick(ref.label, defn.label),
+        required=pick(ref.required, defn.required),
+        options_key=pick(ref.options_key, defn.options_key),
+        encrypted=pick(ref.encrypted, defn.encrypted),
+        half_width=pick(ref.half_width, defn.half_width),
+        visible_when=ref.visible_when,
+    )
+
+
+StepField = Annotated[FieldConfig | FieldRef, Field(union_mode="left_to_right")]
 
 
 class NotificationRuleConfig(BaseModel):
@@ -51,7 +90,7 @@ class WorkflowStepConfig(BaseModel):
     assignee_role: str | None = None
     assignee_permission: str | None = None
     assignee: str | None = None  # contextual: target_person, requester
-    fields: list[FieldConfig] = []
+    fields: list[StepField] = []
     actions: list[str] = []
     partial_save: bool = False
     corrections_target: str | None = None
