@@ -5,6 +5,9 @@ from nicegui import ui
 from nicegui.testing import User
 
 from not_dot_net.frontend.widgets import chip_list_editor, keyed_chip_editor
+from not_dot_net.backend.vocabularies import (
+    vocabularies_config, VocabulariesConfig, StoredVocabulary, VocabularyTerm,
+)
 
 
 async def test_chip_list_editor_initial_value(user: User):
@@ -103,3 +106,27 @@ async def test_keyed_chip_editor_nested_change_propagates(user: User):
     await user.open("/_k3")
     captured["w"].set_values("k", ["x", "y"])
     assert captured["w"].value == {"k": ["x", "y"]}
+
+
+async def test_select_field_renders_vocabulary_labels(user: User):
+    await vocabularies_config.set(VocabulariesConfig(vocabularies={
+        "nationalities_demo": StoredVocabulary(
+            key="nationalities_demo", label={"en": "Nat"},
+            terms=[VocabularyTerm(code="FR", labels={"en": "French", "fr": "Français"})],
+        )
+    }))
+    from not_dot_net.frontend.workflow_step import _render_field
+    from not_dot_net.config import FieldConfig
+    fields: dict = {}
+
+    @ui.page("/_t_select")
+    async def _p():
+        await _render_field(
+            FieldConfig(name="nat", type="select", options_key="nationalities_demo"),
+            data={}, fields=fields, files={}, on_file_upload=None,
+            max_upload_size_mb=2, width_class="w-full",
+        )
+
+    await user.open("/_t_select")
+    # The select's options map code -> label.
+    assert fields["nat"].options == {"FR": "French"}

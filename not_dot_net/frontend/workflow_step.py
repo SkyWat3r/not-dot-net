@@ -125,10 +125,17 @@ async def _render_field(field_cfg, data, fields, files, on_file_upload, max_uplo
                 ui.icon("edit_calendar").on("click", menu.open).classes("cursor-pointer")
         fields[field_cfg.name] = inp
     elif field_cfg.type == "select":
-        options = await _resolve_options(field_cfg.options_key)
-        fields[field_cfg.name] = ui.select(
-            label=label, options=options, value=value if value in options else None
+        from not_dot_net.backend.vocabularies import field_options
+        spec = await field_options(field_cfg.options_key, get_locale())
+        select = ui.select(
+            label=label, options=spec.options,
+            value=value if value in spec.options else None,
+            new_value_mode="add-unique" if spec.allow_custom else None,
+            with_input=spec.allow_custom,
         ).props("outlined dense stack-label").classes(width_class)
+        if spec.allow_custom:
+            select.props("use-input fill-input hide-selected")
+        fields[field_cfg.name] = select
     elif field_cfg.type == "file":
         uploaded = (files or {}).get(field_cfg.name)
         if uploaded:
@@ -611,34 +618,3 @@ def _collect_data(fields: dict) -> dict:
 def _set_date(inp, menu, event):
     inp.value = event.value
     menu.close()
-
-
-async def _resolve_options(options_key: str | None) -> list[str]:
-    """Resolve select field options from config."""
-    if not options_key:
-        return []
-    if options_key == "teams":
-        from not_dot_net.config import org_config
-        cfg = await org_config.get()
-        return cfg.teams
-    if options_key == "roles":
-        from not_dot_net.backend.roles import roles_config
-        cfg = await roles_config.get()
-        return list(cfg.roles.keys())
-    if options_key == "employment_statuses":
-        from not_dot_net.config import org_config
-        cfg = await org_config.get()
-        return cfg.employment_statuses
-    if options_key == "employers":
-        from not_dot_net.config import org_config
-        cfg = await org_config.get()
-        return cfg.employers
-    if options_key == "transport_modes":
-        from not_dot_net.config import org_config
-        cfg = await org_config.get()
-        return cfg.transport_modes
-    if options_key == "funding_sources":
-        from not_dot_net.config import org_config
-        cfg = await org_config.get()
-        return cfg.funding_sources
-    return []
