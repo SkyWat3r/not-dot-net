@@ -95,9 +95,12 @@ class VocabularyView:
     editable: bool
 
 
-async def resolve_terms(key: str, *, active_only: bool = True) -> list[VocabularyTerm]:
+async def resolve_terms(
+    key: str, *, active_only: bool = True, cfg: "VocabulariesConfig | None" = None
+) -> list[VocabularyTerm]:
     """Terms for a key: stored registry first, then built-in providers, else []."""
-    cfg = await vocabularies_config.get()
+    if cfg is None:
+        cfg = await vocabularies_config.get()
     stored = cfg.vocabularies.get(key)
     if stored is not None:
         terms = stored.terms
@@ -114,7 +117,7 @@ async def field_options(key: str, locale: str) -> FieldOptions:
     cfg = await vocabularies_config.get()
     stored = cfg.vocabularies.get(key)
     allow_custom = stored.allow_custom if stored is not None else False
-    terms = await resolve_terms(key)
+    terms = await resolve_terms(key, cfg=cfg)
     return FieldOptions(
         options={t.code: term_label(t, locale) for t in terms},
         allow_custom=allow_custom,

@@ -2,6 +2,7 @@ import pytest
 from not_dot_net.backend.vocabularies import (
     VocabularyTerm, StoredVocabulary, VocabulariesConfig,
     vocabularies_config, term_label,
+    resolve_terms, field_options, list_vocabularies, FieldOptions,
 )
 from not_dot_net.backend.vocabularies import BUILTIN_VOCABULARIES
 
@@ -47,11 +48,6 @@ async def test_roles_builtin_reflects_roles_config():
     await roles_config.set(RolesConfig(roles={"it": RoleDefinition(label="IT Staff")}))
     terms = await BUILTIN_VOCABULARIES["roles"].load_terms()
     assert any(t.code == "it" and t.labels["en"] == "IT Staff" for t in terms)
-
-
-from not_dot_net.backend.vocabularies import (
-    resolve_terms, field_options, list_vocabularies, FieldOptions,
-)
 
 
 async def test_resolve_terms_stored_builtin_and_missing():
