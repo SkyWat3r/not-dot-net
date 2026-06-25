@@ -360,7 +360,7 @@ async def resolve_display_values(workflow, data: dict, locale: str) -> dict[str,
     for key, value in data.items():
         options_key = field_keys.get(key)
         if options_key and value:
-            terms = {t.code: t for t in await resolve_terms(options_key, active_only=False)}
+            terms = {term.code: term for term in await resolve_terms(options_key, active_only=False)}
             term = terms.get(value)
             resolved[key] = term_label(term, locale) if term else value
         else:

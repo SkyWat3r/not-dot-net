@@ -4,6 +4,42 @@ from not_dot_net.backend.vocabularies import (
     vocabularies_config, VocabulariesConfig, StoredVocabulary, VocabularyTerm)
 
 
+def _make_vocab(codes: list[str]) -> StoredVocabulary:
+    return StoredVocabulary(
+        key="test",
+        label={"en": "Test"},
+        terms=[VocabularyTerm(code=c, labels={"en": c}) for c in codes],
+    )
+
+
+def test_move_term_up():
+    from not_dot_net.frontend.vocabularies_editor import _move
+    voc = _make_vocab(["A", "B", "C"])
+    _move(voc, 1, -1)
+    assert [t.code for t in voc.terms] == ["B", "A", "C"]
+
+
+def test_move_term_down():
+    from not_dot_net.frontend.vocabularies_editor import _move
+    voc = _make_vocab(["A", "B", "C"])
+    _move(voc, 1, +1)
+    assert [t.code for t in voc.terms] == ["A", "C", "B"]
+
+
+def test_move_term_up_no_op_at_first():
+    from not_dot_net.frontend.vocabularies_editor import _move
+    voc = _make_vocab(["A", "B", "C"])
+    _move(voc, 0, -1)
+    assert [t.code for t in voc.terms] == ["A", "B", "C"]
+
+
+def test_move_term_down_no_op_at_last():
+    from not_dot_net.frontend.vocabularies_editor import _move
+    voc = _make_vocab(["A", "B", "C"])
+    _move(voc, 2, +1)
+    assert [t.code for t in voc.terms] == ["A", "B", "C"]
+
+
 async def test_save_vocabulary_persists_and_rejects_duplicate_codes():
     from not_dot_net.frontend.vocabularies_editor import save_vocabulary
     ok = StoredVocabulary(key="grades", label={"en": "Grades"}, terms=[

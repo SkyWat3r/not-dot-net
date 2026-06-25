@@ -63,12 +63,15 @@ def _prompt_new_vocabulary(cfg: VocabulariesConfig, on_done) -> None:
         name = ui.input(t("vocab_name")).props("outlined dense")
 
         async def create():
-            key = display_name_to_key(name.value or "", set(cfg.vocabularies), fallback_prefix="vocab")
-            await save_vocabulary(StoredVocabulary(key=key, label={get_locale(): name.value or key}))
+            if not (name.value or "").strip():
+                ui.notify(t("vocab_name_required"), color="warning")
+                return
+            key = display_name_to_key(name.value, set(cfg.vocabularies), fallback_prefix="vocab")
+            await save_vocabulary(StoredVocabulary(key=key, label={get_locale(): name.value}))
             dlg.close()
             await on_done()
 
-        ui.button("OK", on_click=create).props("color=primary")
+        ui.button(t("save"), on_click=create).props("color=primary")
     dlg.open()
 
 
@@ -99,6 +102,7 @@ def _open_term_editor(vocabulary: StoredVocabulary, on_done) -> None:
 
         def render_rows():
             rows.clear()
+            last = len(working.terms) - 1
             with rows:
                 for i, term in enumerate(working.terms):
                     with ui.row().classes("items-center gap-2"):
@@ -113,6 +117,16 @@ def _open_term_editor(vocabulary: StoredVocabulary, on_done) -> None:
                                  ).props("outlined dense")
                         ui.switch(t("active"), value=term.active,
                                   on_change=lambda e, i=i: _set(working, i, "active", e.value))
+                        up_btn = ui.button(icon="keyboard_arrow_up",
+                                           on_click=lambda i=i: (_move(working, i, -1), render_rows())
+                                           ).props("flat dense")
+                        if i == 0:
+                            up_btn.props("disable")
+                        down_btn = ui.button(icon="keyboard_arrow_down",
+                                             on_click=lambda i=i: (_move(working, i, +1), render_rows())
+                                             ).props("flat dense")
+                        if i == last:
+                            down_btn.props("disable")
                         ui.button(icon="delete",
                                   on_click=lambda i=i: (_del(working, i), render_rows())
                                   ).props("flat dense color=negative")
@@ -152,3 +166,9 @@ def _set_label(voc: StoredVocabulary, i: int, locale: str, value: str) -> None:
 
 def _del(voc: StoredVocabulary, i: int) -> None:
     del voc.terms[i]
+
+
+def _move(voc: StoredVocabulary, i: int, delta: int) -> None:
+    j = i + delta
+    if 0 <= j < len(voc.terms):
+        voc.terms[i], voc.terms[j] = voc.terms[j], voc.terms[i]
