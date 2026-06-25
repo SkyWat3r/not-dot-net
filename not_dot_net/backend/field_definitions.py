@@ -32,3 +32,25 @@ class FieldDefinitionsConfig(BaseModel):
 
 field_definitions_config = section("field_definitions", FieldDefinitionsConfig,
                                    label="Field definitions")
+
+
+async def resolve_step_fields(
+    step: WorkflowStepConfig, *, cfg: FieldDefinitionsConfig | None = None
+) -> list[FieldConfig]:
+    """Flatten a step's fields: inline fields pass through; references resolve
+    against their definition. A reference whose definition is missing is dropped
+    (deletion is normally blocked; this guards hand-edited/imported configs)."""
+    if cfg is None:
+        cfg = await field_definitions_config.get()
+    resolved: list[FieldConfig] = []
+    for item in step.fields:
+        if isinstance(item, FieldRef):
+            defn = cfg.definitions.get(item.ref)
+            if defn is None:
+                _log.warning("step %r references unknown field definition %r — dropped",
+                             step.key, item.ref)
+                continue
+            resolved.append(resolve_field_ref(item, defn))
+        else:
+            resolved.append(item)
+    return resolved

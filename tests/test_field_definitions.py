@@ -40,3 +40,32 @@ def test_step_fields_union_deserializes_both_shapes():
     assert isinstance(step.fields[1], FieldRef)
     assert step.fields[1].ref == "phone"
     assert step.fields[1].required is True
+
+
+from not_dot_net.backend.field_definitions import (
+    FieldDefinitionsConfig, resolve_step_fields,
+)
+
+
+async def test_resolve_step_fields_mixes_inline_and_refs_in_order():
+    cfg = FieldDefinitionsConfig(definitions={
+        "phone": FieldDefinition(key="phone", type="phone", label="Phone"),
+    })
+    step = WorkflowStepConfig(key="s", type="form", fields=[
+        FieldConfig(name="note", type="text"),
+        FieldRef(ref="phone", required=True),
+    ])
+    resolved = await resolve_step_fields(step, cfg=cfg)
+    assert [f.name for f in resolved] == ["note", "phone"]
+    assert resolved[1].type == "phone"
+    assert resolved[1].required is True
+
+
+async def test_resolve_step_fields_drops_dangling_ref():
+    cfg = FieldDefinitionsConfig(definitions={})
+    step = WorkflowStepConfig(key="s", type="form", fields=[
+        FieldConfig(name="note", type="text"),
+        FieldRef(ref="gone"),
+    ])
+    resolved = await resolve_step_fields(step, cfg=cfg)
+    assert [f.name for f in resolved] == ["note"]
