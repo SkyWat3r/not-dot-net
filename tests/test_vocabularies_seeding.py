@@ -3,6 +3,7 @@ from not_dot_net.backend.app_config import AppSetting
 from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.vocabularies import (
     ensure_vocabularies_seeded, vocabularies_config, _SEED_DEFAULTS, term_label,
+    normalize_code,
 )
 
 
@@ -31,9 +32,9 @@ async def test_seed_uses_customized_org_values():
     cfg = await vocabularies_config.get()
     assert set(cfg.vocabularies) == set(_SEED_DEFAULTS)
     funding = [t.code for t in cfg.vocabularies["funding_sources"].terms]
-    assert funding == ["ANR", "ERC"]                    # customized values win
+    assert funding == ["anr", "erc"]                    # customized values win, normalized
     teams = [t.code for t in cfg.vocabularies["teams"].terms]
-    assert teams == _SEED_DEFAULTS["teams"]             # untouched key -> defaults
+    assert teams == [normalize_code(v) for v in _SEED_DEFAULTS["teams"]]
 
 
 async def test_seed_is_idempotent():
@@ -46,4 +47,6 @@ async def test_seed_is_idempotent():
 async def test_seed_falls_back_to_defaults_without_org_row():
     await ensure_vocabularies_seeded()
     cfg = await vocabularies_config.get()
-    assert [t.code for t in cfg.vocabularies["sites"].terms] == _SEED_DEFAULTS["sites"]
+    assert [t.code for t in cfg.vocabularies["sites"].terms] == [
+        normalize_code(v) for v in _SEED_DEFAULTS["sites"]
+    ]  # e.g. "Palaiseau" -> "palaiseau"
