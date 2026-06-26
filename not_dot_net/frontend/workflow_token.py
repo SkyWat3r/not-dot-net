@@ -13,6 +13,7 @@ from not_dot_net.backend.verification import (
     verify_code,
 )
 from not_dot_net.backend.workflow_models import WorkflowFile
+from not_dot_net.backend.field_definitions import resolve_step_fields
 from not_dot_net.backend.workflow_service import (
     get_request_by_token,
     save_draft,
@@ -107,7 +108,8 @@ def setup():
                             ui.label(f"• {doc}").classes("text-sm")
 
                 uploaded_files: dict[str, str] = {}
-                encrypted_fields = {f.name for f in step.fields if f.encrypted}
+                resolved = await resolve_step_fields(step)
+                encrypted_fields = {f.name for f in resolved if f.encrypted}
 
                 async def handle_file_upload(field_name, event):
                     upload = event.file

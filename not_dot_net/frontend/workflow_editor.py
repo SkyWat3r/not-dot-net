@@ -363,7 +363,8 @@ class WorkflowEditorDialog:
         field.label = label
         if self._is_field_name_locked(wf_key, step_key, field.name):
             return
-        taken = {f.name for j, f in enumerate(step.fields) if j != index and f.name}
+        current_name = field.name if hasattr(field, "name") else None
+        taken = {f.name for f in self._resolved_step_fields(step) if f.name and f.name != current_name}
         field.name = _slugify(label, taken)
 
     def delete_field(self, wf_key: str, step_key: str, index: int) -> None:
@@ -865,7 +866,7 @@ class WorkflowEditorDialog:
             # visible_when picker — same-step checkbox + value, v1
             wf = self.working_copy.workflows[wf_key]
             step = next(s for s in wf.steps if s.key == step_key)
-            checkbox_names = [f.name for f in step.fields
+            checkbox_names = [f.name for f in self._resolved_step_fields(step)
                               if f.type == "checkbox" and f.name != field.name]
             current_when = field.visible_when or {}
             current_key = next(iter(current_when), None)

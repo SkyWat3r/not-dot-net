@@ -162,3 +162,26 @@ def test_compute_warnings_flags_dangling_ref():
     ed = _editor_with(working, {})
     warnings = ed.compute_warnings()
     assert any("gone" in w and "field definition" in w for w in warnings)
+
+
+def test_set_field_label_with_autoslug_does_not_crash_with_fieldref():
+    """Bug: set_field_label_with_autoslug iterated step.fields accessing f.name,
+    but FieldRef has no .name attribute → AttributeError.
+
+    Fix: use _resolved_step_fields(step) which returns only FieldConfig objects.
+    """
+    working = WorkflowsConfig(workflows={
+        "wf": WorkflowConfig(label="WF", steps=[
+            WorkflowStepConfig(key="s", type="form", fields=[
+                FieldRef(ref="phone"),
+                FieldConfig(name="", type="text"),
+            ]),
+        ]),
+    })
+    ed = _editor_with(working, {"phone": FieldDefinition(key="phone", type="phone")})
+    # Before fix: raises AttributeError (FieldRef has no .name attribute)
+    # After fix: succeeds and generates a slug from the label
+    ed.set_field_label_with_autoslug("wf", "s", 1, "Some Label")
+    field = working.workflows["wf"].steps[0].fields[1]
+    assert field.label == "Some Label"
+    assert field.name  # a slug was generated

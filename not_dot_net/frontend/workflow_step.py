@@ -9,7 +9,6 @@ from nicegui import ui
 
 from not_dot_net.backend.field_definitions import field_definitions_config, resolve_step_fields
 from not_dot_net.backend.vocabularies import resolve_terms, term_label
-from not_dot_net.backend.workflow_engine import get_completion_status
 from not_dot_net.config import WorkflowStepConfig, step_display
 from not_dot_net.frontend.i18n import TRANSLATIONS, get_locale, t
 
