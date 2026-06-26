@@ -21,11 +21,12 @@ from not_dot_net.backend.vocabularies import (
 from not_dot_net.backend.workflow_service import WorkflowsConfig, workflows_config
 from not_dot_net.config import FieldConfig, FieldRef, WorkflowConfig, WorkflowStepConfig
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.new_request import render
 from not_dot_net.frontend.workflow_step import resolve_display_values
 
 
 @pytest.fixture
-async def superuser():
+def superuser():
     return SimpleNamespace(
         id="00000000-0000-0000-0000-000000000001",
         email="admin@test",
@@ -37,8 +38,6 @@ async def superuser():
 
 async def test_referenced_field_renders_with_definition_label(user: User, superuser):
     """A FieldRef in a step renders with the definition's label."""
-    from not_dot_net.frontend.new_request import render
-
     await field_definitions_config.set(FieldDefinitionsConfig(definitions={
         "phone": FieldDefinition(key="phone", type="phone", label="Phone number"),
     }))
@@ -61,8 +60,6 @@ async def test_referenced_field_renders_with_definition_label(user: User, superu
 
 async def test_referenced_field_required_prevents_empty_submit(user: User, superuser):
     """A FieldRef(required=True) makes the rendered field required — submitting empty shows notice."""
-    from not_dot_net.frontend.new_request import render
-
     await field_definitions_config.set(FieldDefinitionsConfig(definitions={
         "contact": FieldDefinition(key="contact", type="text", label="Contact"),
     }))
@@ -88,8 +85,6 @@ async def test_referenced_field_required_prevents_empty_submit(user: User, super
 
 async def test_edit_definition_label_applies_everywhere(user: User, superuser):
     """Editing the definition label and re-rendering shows the new label."""
-    from not_dot_net.frontend.new_request import render
-
     await save_field_definition(FieldDefinition(key="job", type="text", label="Job title"))
     await workflows_config.set(WorkflowsConfig(workflows={
         "job_wf": WorkflowConfig(label="Job WF", steps=[
