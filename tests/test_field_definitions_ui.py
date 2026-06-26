@@ -217,6 +217,12 @@ async def test_workflow_editor_use_shared_button_and_append(user: User, superuse
     dlg = captured["dlg"]
     dlg.select("wf", "info")
     await user.should_see(t("field_use_shared"))
+    # Clicking the button opens the picker dialog (proves the button wiring).
+    # The confirm button itself closes its dialog inside the click handler, which
+    # the NiceGUI test harness cannot drive (it mutates the listener dict mid-
+    # iteration), so the append is asserted via add_field_ref directly.
+    user.find(t("field_use_shared")).click()
+    await user.should_see(t("field_definitions"))
     dlg.add_field_ref("wf", "info", "phone")
     fields = dlg.working_copy.workflows["wf"].steps[0].fields
     assert len(fields) == 1

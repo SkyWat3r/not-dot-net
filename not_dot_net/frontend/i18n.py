@@ -333,6 +333,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "field_required": "Required",
         "field_use_shared": "Use shared field",
         "field_shared_badge": "shared: {ref}",
+        "field_ref_dangling": "unknown field definition: {ref}",
         "field_edit_overrides": "Overrides",
         "field_override_toggle": "Override",
         # Vocabularies editor
@@ -816,6 +817,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "field_required": "Obligatoire",
         "field_use_shared": "Utiliser un champ partagé",
         "field_shared_badge": "partagé : {ref}",
+        "field_ref_dangling": "définition de champ inconnue : {ref}",
         "field_edit_overrides": "Surcharges",
         "field_override_toggle": "Surcharger",
         # Vocabularies editor

@@ -893,7 +893,6 @@ class WorkflowEditorDialog:
             val_select.on_value_change(_apply)
 
     def _render_field_ref_row(self, wf_key, step_key, idx, ref, n_fields) -> None:
-        from not_dot_net.backend.field_definitions import FieldDefinition as _FD
         defn = self._field_defs.get(ref.ref)
         resolved = resolve_field_ref(ref, defn) if defn else None
         with ui.row().classes("w-full items-center gap-2 no-wrap"):
@@ -902,7 +901,7 @@ class WorkflowEditorDialog:
                 ui.label(resolved.label or resolved.name).classes("grow")
                 ui.label(resolved.type).classes("text-grey text-xs")
             else:
-                ui.label(t("field_defs_in_use", usages=ref.ref)).classes("text-negative grow")
+                ui.label(t("field_ref_dangling", ref=ref.ref)).classes("text-negative grow")
             ui.button(t("field_edit_overrides"), icon="tune",
                       on_click=lambda w=wf_key, sk=step_key, i=idx, r=ref:
                           self._open_override_dialog(w, sk, i, r)
@@ -947,8 +946,8 @@ class WorkflowEditorDialog:
 
                     def on_toggle(e, _attr=attr, _w=w):
                         _w.set_enabled(e.value)
-                        if not e.value:
-                            self.set_field_ref_override(wf_key, step_key, idx, _attr, None)
+                        self.set_field_ref_override(
+                            wf_key, step_key, idx, _attr, _w.value if e.value else None)
                     sw.on_value_change(on_toggle)
                 return w
 
