@@ -91,10 +91,12 @@ def setup():
 
             ui.separator().classes("my-4")
 
-            field_labels = {
-                f.name: t(f.label) if f.label else f.name
-                for step in wf.steps for f in step.fields
-            }
+            from not_dot_net.backend.field_definitions import field_definitions_config, resolve_step_fields
+            _defs_cfg = await field_definitions_config.get()
+            field_labels = {}
+            for step in wf.steps:
+                for f in await resolve_step_fields(step, cfg=_defs_cfg):
+                    field_labels[f.name] = t(f.label) if f.label else f.name
             if any(files_by_step.values()):
                 _render_files_section(files_by_step, field_labels, user)
             _render_timeline(events, actor_names, field_labels)

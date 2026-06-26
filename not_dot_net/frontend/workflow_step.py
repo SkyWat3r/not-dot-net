@@ -7,6 +7,7 @@ from datetime import date as dt_date
 import httpx
 from nicegui import ui
 
+from not_dot_net.backend.field_definitions import field_definitions_config, resolve_step_fields
 from not_dot_net.backend.vocabularies import resolve_terms, term_label
 from not_dot_net.backend.workflow_engine import get_completion_status
 from not_dot_net.config import WorkflowStepConfig, step_display
@@ -351,11 +352,12 @@ async def _render_ad_account_creation_form(step, prefill, on_submit):
 async def resolve_display_values(workflow, data: dict, locale: str) -> dict[str, str]:
     """Map a request's stored values to display strings, resolving select codes
     (which may differ from their label, e.g. nationalities) to their label."""
-    field_keys = {
-        f.name: f.options_key
-        for s in workflow.steps for f in s.fields
-        if f.type == "select" and f.options_key
-    }
+    defs_cfg = await field_definitions_config.get()
+    field_keys: dict[str, str] = {}
+    for s in workflow.steps:
+        for f in await resolve_step_fields(s, cfg=defs_cfg):
+            if f.type == "select" and f.options_key:
+                field_keys[f.name] = f.options_key
     resolved: dict[str, str] = {}
     for key, value in data.items():
         options_key = field_keys.get(key)
@@ -383,13 +385,15 @@ async def render_step_form(
 
     from not_dot_net.config import is_field_visible
 
+    resolved_fields = await resolve_step_fields(step)
+
     fields: dict = {}
     containers: dict = {}
     state: dict = dict(data)  # mutable working copy for visibility predicates
 
     # Group consecutive half_width fields into pairs for row layout
     groups: list[list] = []
-    for field_cfg in step.fields:
+    for field_cfg in resolved_fields:
         if field_cfg.half_width:
             if groups and isinstance(groups[-1], list) and len(groups[-1]) < 2 and groups[-1][0].half_width:
                 groups[-1].append(field_cfg)
@@ -417,7 +421,7 @@ async def render_step_form(
     # are referenced by any visible_when in this step.
     referenced = {
         key
-        for f in step.fields
+        for f in resolved_fields
         if f.visible_when
         for key in f.visible_when.keys()
     }
@@ -426,7 +430,7 @@ async def render_step_form(
         collected = _collect_data(fields)
         state.clear()
         state.update(collected)
-        for f in step.fields:
+        for f in resolved_fields:
             c = containers.get(f.name)
             if c is not None:
                 c.set_visibility(is_field_visible(f, state))
@@ -442,7 +446,7 @@ async def render_step_form(
 
     # Completion status for partial-save steps
     if step.partial_save:
-        _render_completion_indicator(step, data, files or {})
+        _render_completion_indicator(resolved_fields, data, files or {})
 
     with ui.row().classes("mt-4 gap-2"):
         if on_save_draft and step.partial_save:
@@ -453,7 +457,7 @@ async def render_step_form(
         async def validated_submit():
             collected = _collect_data(fields)
             missing = [
-                t(f.label) if f.label else f.name for f in step.fields
+                t(f.label) if f.label else f.name for f in resolved_fields
                 if f.required
                 and f.type != "file"
                 and is_field_visible(f, collected)
@@ -473,10 +477,10 @@ async def render_step_form(
     return fields
 
 
-def _render_completion_indicator(step: WorkflowStepConfig, data: dict, files: dict):
+def _render_completion_indicator(fields: list, data: dict, files: dict):
     """Show which required, currently-visible fields are filled (partial save)."""
     from not_dot_net.config import is_field_visible
-    required = [f for f in step.fields if f.required and is_field_visible(f, data)]
+    required = [f for f in fields if f.required and is_field_visible(f, data)]
     if not required:
         return
     filled = sum(
