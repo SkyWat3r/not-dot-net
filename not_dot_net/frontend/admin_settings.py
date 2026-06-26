@@ -15,6 +15,7 @@ from not_dot_net.backend.data_io import export_all, import_all
 from not_dot_net.backend.personnel_import import import_personnel, parse_clean_csv_text
 from not_dot_net.frontend.admin_roles import render as render_roles
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.field_definitions_editor import render as render_field_definitions
 from not_dot_net.frontend.vocabularies_editor import render as render_vocabularies
 from not_dot_net.frontend.widgets import chip_list_editor, keyed_chip_editor
 
@@ -63,10 +64,13 @@ async def render(user):
     with ui.expansion(t("vocabularies"), icon="list").classes("w-full"):
         await render_vocabularies(user)
 
+    with ui.expansion(t("field_definitions"), icon="dynamic_form").classes("w-full"):
+        await render_field_definitions(user)
+
     registry = get_registry()
 
     for prefix, cfg_section in sorted(registry.items()):
-        if prefix == "vocabularies":
+        if prefix in ("vocabularies", "field_definitions"):
             continue
         current = await cfg_section.get()
         schema = cfg_section.schema

@@ -11,6 +11,7 @@ from not_dot_net.backend.field_definitions import (
     FieldDefinitionsConfig,
     field_definitions_config,
     save_field_definition,
+    delete_field_definition,
 )
 from not_dot_net.backend.vocabularies import (
     VocabulariesConfig,
@@ -20,6 +21,7 @@ from not_dot_net.backend.vocabularies import (
 )
 from not_dot_net.backend.workflow_service import WorkflowsConfig, workflows_config
 from not_dot_net.config import FieldConfig, FieldRef, WorkflowConfig, WorkflowStepConfig
+from not_dot_net.frontend.field_definitions_editor import render as render_field_definitions
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.new_request import render
 from not_dot_net.frontend.workflow_step import resolve_display_values
@@ -131,3 +133,58 @@ async def test_resolve_display_values_maps_referenced_select_code_to_label():
     ])
     out = await resolve_display_values(wf, {"nationality": "FR"}, "fr")
     assert out["nationality"] == "Français"
+
+
+@pytest.fixture
+def admin_user():
+    """Minimal user with manage_settings permission (superuser → all permissions)."""
+    return SimpleNamespace(
+        id="00000000-0000-0000-0000-000000000001",
+        email="admin@test",
+        is_superuser=True,
+        is_active=True,
+        role="",
+    )
+
+
+async def test_admin_can_create_field_definition(user: User, admin_user) -> None:
+    @ui.page("/_fd_create_test")
+    async def _page():
+        await render_field_definitions(admin_user)
+
+    await user.open("/_fd_create_test")
+    await user.should_see(t("field_defs_new"))
+    user.find(t("field_defs_new")).click()
+    await user.should_see(t("field_defs_name"))
+    user.find(t("field_defs_name")).type("Phone number")
+    user.find(t("save")).click()
+    await user.should_see(kind=ui.label, content="Phone number")
+
+    cfg = await field_definitions_config.get()
+    assert any(d.label == "Phone number" or k == "phone_number"
+               for k, d in cfg.definitions.items())
+
+
+async def test_delete_in_use_is_refused(user: User, admin_user) -> None:
+    await save_field_definition(FieldDefinition(key="phone", type="phone", label="Phone"))
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "mission": WorkflowConfig(label="Mission", steps=[
+            WorkflowStepConfig(key="info", type="form", assignee="requester", fields=[
+                FieldRef(ref="phone"),
+            ]),
+        ]),
+    }))
+
+    @ui.page("/_fd_delete_test")
+    async def _page():
+        await render_field_definitions(admin_user)
+
+    await user.open("/_fd_delete_test")
+    await user.should_see("Phone")
+    user.find(kind=ui.button, content="delete").click()
+    await user.should_see(t("cancel"))
+    user.find(t("delete")).click()
+    await user.should_see("mission/info")
+
+    cfg = await field_definitions_config.get()
+    assert "phone" in cfg.definitions
