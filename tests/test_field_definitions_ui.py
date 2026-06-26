@@ -24,6 +24,7 @@ from not_dot_net.config import FieldConfig, FieldRef, WorkflowConfig, WorkflowSt
 from not_dot_net.frontend.field_definitions_editor import render as render_field_definitions
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.new_request import render
+from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
 from not_dot_net.frontend.workflow_step import resolve_display_values
 
 
@@ -176,3 +177,48 @@ async def test_delete_in_use_is_refused(user: User, superuser) -> None:
 
     cfg = await field_definitions_config.get()
     assert "phone" in cfg.definitions
+
+
+async def test_workflow_editor_renders_shared_field_badge(user: User, superuser):
+    """A step containing a FieldRef renders the 'shared:' badge in the editor."""
+    await save_field_definition(FieldDefinition(key="phone", type="phone", label="Phone"))
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "wf": WorkflowConfig(label="WF", steps=[
+            WorkflowStepConfig(key="info", type="form", fields=[FieldRef(ref="phone")]),
+        ]),
+    }))
+    captured = {}
+
+    @ui.page("/_we_ref_badge")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(superuser)
+
+    await user.open("/_we_ref_badge")
+    captured["dlg"].select("wf", "info")
+    await user.should_see(t("field_shared_badge", ref="phone"))
+
+
+async def test_workflow_editor_use_shared_button_and_append(user: User, superuser):
+    """The 'Use shared field' button appears when definitions exist, and adding
+    a shared field appends a FieldRef to the step."""
+    await save_field_definition(FieldDefinition(key="phone", type="phone", label="Phone"))
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "wf": WorkflowConfig(label="WF", steps=[
+            WorkflowStepConfig(key="info", type="form", fields=[]),
+        ]),
+    }))
+    captured = {}
+
+    @ui.page("/_we_use_shared")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(superuser)
+
+    await user.open("/_we_use_shared")
+    dlg = captured["dlg"]
+    dlg.select("wf", "info")
+    await user.should_see(t("field_use_shared"))
+    dlg.add_field_ref("wf", "info", "phone")
+    fields = dlg.working_copy.workflows["wf"].steps[0].fields
+    assert len(fields) == 1
+    assert isinstance(fields[0], FieldRef)
+    assert fields[0].ref == "phone"

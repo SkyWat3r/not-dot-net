@@ -785,6 +785,9 @@ class WorkflowEditorDialog:
 
             org_keys = [None, *self._vocab_keys]
             for idx, field in enumerate(step.fields):
+                if isinstance(field, FieldRef):
+                    self._render_field_ref_row(wf_key, step.key, idx, field, len(step.fields))
+                    continue
                 with ui.column().classes("w-full"):
                     with ui.row().classes("w-full items-center gap-2 no-wrap"):
                         ui.input(t("field_display_name"), value=field.label,
@@ -818,6 +821,12 @@ class WorkflowEditorDialog:
             ui.button("+ Add field",
                       on_click=lambda w=wf_key, sk=step.key: self.add_field(w, sk)
                       ).props("flat dense color=primary")
+            def_keys = sorted(self._field_defs)
+            if def_keys:
+                ui.button(t("field_use_shared"), icon="link",
+                          on_click=lambda w=wf_key, sk=step.key, keys=def_keys:
+                              self._prompt_use_shared(w, sk, keys)
+                          ).props("flat dense color=secondary")
 
         with ui.expansion(t("step_advanced"), icon="settings").classes("w-full q-mt-md"):
             ui.label(t("step_key_hint")).classes("text-warning text-xs")
@@ -882,6 +891,82 @@ class WorkflowEditorDialog:
 
             key_select.on_value_change(_apply)
             val_select.on_value_change(_apply)
+
+    def _render_field_ref_row(self, wf_key, step_key, idx, ref, n_fields) -> None:
+        from not_dot_net.backend.field_definitions import FieldDefinition as _FD
+        defn = self._field_defs.get(ref.ref)
+        resolved = resolve_field_ref(ref, defn) if defn else None
+        with ui.row().classes("w-full items-center gap-2 no-wrap"):
+            ui.badge(t("field_shared_badge", ref=ref.ref)).props("color=secondary")
+            if resolved is not None:
+                ui.label(resolved.label or resolved.name).classes("grow")
+                ui.label(resolved.type).classes("text-grey text-xs")
+            else:
+                ui.label(t("field_defs_in_use", usages=ref.ref)).classes("text-negative grow")
+            ui.button(t("field_edit_overrides"), icon="tune",
+                      on_click=lambda w=wf_key, sk=step_key, i=idx, r=ref:
+                          self._open_override_dialog(w, sk, i, r)
+                      ).props("flat dense")
+            ui.button(icon="keyboard_arrow_up",
+                      on_click=lambda w=wf_key, sk=step_key, i=idx: self.move_field(w, sk, i, -1)
+                      ).props(f"flat dense round size=sm {'disable' if idx == 0 else ''}")
+            ui.button(icon="keyboard_arrow_down",
+                      on_click=lambda w=wf_key, sk=step_key, i=idx: self.move_field(w, sk, i, +1)
+                      ).props(f"flat dense round size=sm {'disable' if idx == n_fields - 1 else ''}")
+            ui.button(icon="delete",
+                      on_click=lambda w=wf_key, sk=step_key, i=idx: self.delete_field(w, sk, i)
+                      ).props("flat dense round color=negative")
+
+    def _prompt_use_shared(self, wf_key, step_key, def_keys) -> None:
+        dlg = ui.dialog()
+        with dlg, ui.card():
+            ui.label(t("field_use_shared"))
+            sel = ui.select(def_keys, value=def_keys[0], label=t("field_definitions")
+                            ).props("outlined dense stack-label").classes("w-64")
+
+            def add():
+                self.add_field_ref(wf_key, step_key, sel.value)
+                dlg.close()
+
+            ui.button(t("save"), on_click=add).props("color=primary")
+        dlg.open()
+
+    def _open_override_dialog(self, wf_key, step_key, idx, ref) -> None:
+        from not_dot_net.backend.field_definitions import FieldDefinition as _FD
+        defn = self._field_defs.get(ref.ref)
+        dlg = ui.dialog()
+        with dlg, ui.card().classes("w-full"):
+            ui.label(t("field_shared_badge", ref=ref.ref)).classes("text-h6")
+
+            def row(attr, widget_factory, base_value):
+                with ui.row().classes("w-full items-center gap-2"):
+                    overridden = getattr(ref, attr) is not None
+                    sw = ui.switch(f"{t('field_override_toggle')}: {attr}", value=overridden)
+                    w = widget_factory(getattr(ref, attr) if overridden else base_value)
+                    w.set_enabled(overridden)
+
+                    def on_toggle(e, _attr=attr, _w=w):
+                        _w.set_enabled(e.value)
+                        if not e.value:
+                            self.set_field_ref_override(wf_key, step_key, idx, _attr, None)
+                    sw.on_value_change(on_toggle)
+                return w
+
+            base = defn or _FD(key=ref.ref, type="text")
+
+            label_w = row("label", lambda v: ui.input(t("field_display_name"), value=v or "")
+                          .props("outlined dense stack-label"), base.label)
+            label_w.on_value_change(lambda e: self.set_field_ref_override(wf_key, step_key, idx, "label", e.value))
+
+            req_w = row("required", lambda v: ui.switch(t("field_required"), value=bool(v)), base.required)
+            req_w.on_value_change(lambda e: self.set_field_ref_override(wf_key, step_key, idx, "required", e.value))
+
+            hw_w = row("half_width", lambda v: ui.switch(t("field_half_width"), value=bool(v)), base.half_width)
+            hw_w.on_value_change(lambda e: self.set_field_ref_override(wf_key, step_key, idx, "half_width", e.value))
+
+            ui.button(t("save"), on_click=lambda: (dlg.close(), self._refresh_detail())
+                      ).props("color=primary")
+        dlg.open()
 
     def _apply_visible_when(self, wf_key: str, step_key: str, idx: int,
                             key: str | None, value) -> None:
