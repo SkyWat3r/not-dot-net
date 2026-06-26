@@ -135,22 +135,10 @@ async def test_resolve_display_values_maps_referenced_select_code_to_label():
     assert out["nationality"] == "Français"
 
 
-@pytest.fixture
-def admin_user():
-    """Minimal user with manage_settings permission (superuser → all permissions)."""
-    return SimpleNamespace(
-        id="00000000-0000-0000-0000-000000000001",
-        email="admin@test",
-        is_superuser=True,
-        is_active=True,
-        role="",
-    )
-
-
-async def test_admin_can_create_field_definition(user: User, admin_user) -> None:
+async def test_admin_can_create_field_definition(user: User, superuser) -> None:
     @ui.page("/_fd_create_test")
     async def _page():
-        await render_field_definitions(admin_user)
+        await render_field_definitions(superuser)
 
     await user.open("/_fd_create_test")
     await user.should_see(t("field_defs_new"))
@@ -165,7 +153,7 @@ async def test_admin_can_create_field_definition(user: User, admin_user) -> None
                for k, d in cfg.definitions.items())
 
 
-async def test_delete_in_use_is_refused(user: User, admin_user) -> None:
+async def test_delete_in_use_is_refused(user: User, superuser) -> None:
     await save_field_definition(FieldDefinition(key="phone", type="phone", label="Phone"))
     await workflows_config.set(WorkflowsConfig(workflows={
         "mission": WorkflowConfig(label="Mission", steps=[
@@ -177,7 +165,7 @@ async def test_delete_in_use_is_refused(user: User, admin_user) -> None:
 
     @ui.page("/_fd_delete_test")
     async def _page():
-        await render_field_definitions(admin_user)
+        await render_field_definitions(superuser)
 
     await user.open("/_fd_delete_test")
     await user.should_see("Phone")
