@@ -70,6 +70,37 @@ async def test_invalid_token_rejected_by_save_draft():
         await save_draft(req.id, data={"phone": "x"}, actor_token=str(uuid.uuid4()))
 
 
+async def test_token_submission_attributed_to_target_in_audit():
+    """B-32: a token-page submission has no logged-in actor (actor_id is None).
+    The audit trail must still attribute it to the target person's email rather
+    than recording an event with no actor at all.
+    """
+    from sqlalchemy import select as sa_select
+
+    from not_dot_net.backend.audit import AuditEvent
+
+    req, token = await _start_onboarding_to_newcomer()
+    assert req.target_email, "onboarding should populate target_email"
+
+    await submit_step(
+        req.id, None, "submit",
+        data={"first_name": "A", "last_name": "B"},
+        actor_token=token,
+    )
+
+    async with session_scope() as session:
+        events = (await session.execute(
+            sa_select(AuditEvent).where(
+                AuditEvent.category == "workflow", AuditEvent.action == "submit"
+            )
+        )).scalars().all()
+
+    assert events, "expected an audit event for the token submission"
+    ev = events[-1]
+    assert ev.actor_id is None
+    assert ev.actor_email == req.target_email
+
+
 async def test_token_cannot_inject_unknown_data_keys():
     """R-11: a token holder must only be able to set the current step's
     declared fields — not arbitrary keys like returning_user_id (which

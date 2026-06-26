@@ -17,6 +17,15 @@ from not_dot_net.backend.workflow_service import WorkflowsConfig, workflows_conf
 from not_dot_net.config import FieldRef, WorkflowConfig, WorkflowStepConfig
 
 
+async def test_token_page_shows_expired_for_unknown_token(user: User):
+    """B-T4: opening the token page with an unknown/expired token must render
+    the expired-link message, not crash or leak."""
+    from not_dot_net.frontend.i18n import t
+
+    await user.open("/workflow/token/00000000-0000-0000-0000-000000000000")
+    await user.should_see(t("token_expired"))
+
+
 async def test_fieldref_encrypted_file_stored_encrypted(user: User, monkeypatch):
     """FieldRef to encrypted definition must route uploads through store_encrypted.
 

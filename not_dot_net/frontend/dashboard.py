@@ -1,5 +1,6 @@
 """Dashboard tab — Awaiting My Action + My Requests."""
 
+import re
 from datetime import datetime, timedelta, timezone
 
 from nicegui import ui
@@ -22,6 +23,23 @@ from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_step import (
     render_step_progress,
 )
+
+
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_MD_EMPHASIS = re.compile(r"(\*\*|__|\*|_|`)(.+?)\1")
+
+
+def _preview_line(content: str) -> str:
+    """First meaningful line of page content, with inline Markdown stripped so
+    previews read as plain text instead of showing raw **bold**/[link]() syntax."""
+    line = next(
+        (ln for ln in content.splitlines() if ln.strip() and not ln.startswith("#")),
+        "",
+    )
+    line = _MD_LINK.sub(r"\1", line)
+    while _MD_EMPHASIS.search(line):
+        line = _MD_EMPHASIS.sub(r"\2", line)
+    return line.strip()
 
 
 def render(user: User):
@@ -57,10 +75,7 @@ async def _render_pages_section(container):
                     ui.link(page.title, f"/pages/{page.slug}").classes(
                         "text-subtitle1 font-bold"
                     )
-                    first_line = next(
-                        (ln for ln in page.content.splitlines() if ln.strip() and not ln.startswith("#")),
-                        "",
-                    )
+                    first_line = _preview_line(page.content)
                     if first_line:
                         ui.label(first_line[:120]).classes("text-sm text-grey-8")
 

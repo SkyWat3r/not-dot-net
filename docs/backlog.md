@@ -5,6 +5,13 @@ Findings from full codebase review (2026-04-11). Ordered by severity within each
 **Fixed (2026-04-11):** B-01, B-02, B-03, B-04, B-05, B-07. B-06 confirmed false positive.
 **Fixed (2026-04-11):** B-08, B-09, B-10, B-11, B-12, B-13, B-14, B-15, B-16, B-17.
 **Fixed (2026-04-15):** B-19 — base_url moved to MailConfig, threaded through notify().
+**Fixed (2026-06-26):** B-18, B-22, B-32, B-34, B-36, and B-T2/B-T4/B-T7.
+B-T2 turned out to be a real bug, not just a coverage gap: `submit_step`
+had no terminal-status guard, so a rejected request could be "approved"
+back to completed. Earlier fixes confirmed still in place: B-20, B-21,
+B-23 (admin role removed), B-24, B-25, B-26, B-27, B-28, B-29, B-31, B-35, F-01.
+Still open by deliberate choice: B-33 (cleartext token, accepted phase 28);
+and F-02/F-03/F-04 (minor factorization — F-03 already allowlist-guarded).
 
 ---
 
@@ -106,10 +113,9 @@ for NiceGUI ASGI compat). See docs/code-review-2026-06-10.md R-09.
 
 ## Medium — Robustness / Correctness
 
-### B-18: Race condition on concurrent `submit_step`
-- **File:** `backend/workflow_service.py:220-273`
-- No row lock or version check. Concurrent submits can double-advance a step.
-- **Fix:** Add version column with optimistic locking, or `with_for_update()`.
+### ~~B-18: Race condition on concurrent `submit_step`~~ — FIXED 2026-06-26
+- **File:** `backend/workflow_service.py`
+- `submit_step` and `save_draft` now load the row with `session.get(..., with_for_update=True)` — no-op on SQLite, real `FOR UPDATE` on PostgreSQL. Not unit-testable on SQLite; the terminal-status guard (B-T2) additionally blocks the common double-click case.
 
 ### B-19: `base_url` hardcoded to `localhost:8088` in notifications
 - **File:** `backend/notifications.py:89`
@@ -126,10 +132,9 @@ for NiceGUI ASGI compat). See docs/code-review-2026-06-10.md R-09.
 - `actor_token` never compared to `req.token` — any caller without `actor_user` gets a free pass.
 - **Fix:** Validate `actor_token == req.token` + check expiry.
 
-### B-22: TOCTOU in `ConfigSection.set`
-- **File:** `backend/app_config.py:32-40`
-- Concurrent saves can hit unique constraint violation.
-- **Fix:** Use SQLite upsert (`INSERT ... ON CONFLICT DO UPDATE`).
+### ~~B-22: TOCTOU in `ConfigSection.set`~~ — FIXED 2026-06-26
+- **File:** `backend/app_config.py`
+- `set()` now catches `IntegrityError` on the first-insert path, rolls back, and falls back to updating the row a concurrent writer inserted (same pattern as B-28). One-time-per-prefix race window.
 
 ### B-23: In-memory lockout repair never persisted
 - **File:** `backend/roles.py:42-51`
@@ -176,20 +181,18 @@ for NiceGUI ASGI compat). See docs/code-review-2026-06-10.md R-09.
 - Per-booking query for owner name. 10 bookings = 10 sequential round-trips.
 - **Fix:** Batch lookup like dashboard's `resolve_actor_names`.
 
-### B-32: Token-page submissions unattributed in audit trail
-- **File:** `frontend/workflow_token.py:44`
-- `actor_id=None` means audit events have no actor.
-- **Fix:** Thread `actor_token` through to `WorkflowEvent`, or store target email as actor.
+### ~~B-32: Token-page submissions unattributed in audit trail~~ — FIXED 2026-06-26
+- **File:** `backend/workflow_service.py` (`submit_step`)
+- `log_audit` now receives `actor_email=req.target_email` on token submissions, so the audit trail attributes them to the target person. (`actor_token` is deliberately NOT persisted on the event row — column dropped in migration 0009.)
 
 ### B-33: Token stored cleartext in DB
 - **File:** `backend/workflow_models.py:30`
 - DB read = full token compromise.
 - **Fix:** Store `sha256(token)`, compare hash on lookup.
 
-### B-34: Raw Markdown in dashboard page previews
-- **File:** `frontend/dashboard.py:59`
-- `**bold**`, `[link](url)` etc. appear verbatim in preview snippets.
-- **Fix:** Strip Markdown syntax from first-line preview.
+### ~~B-34: Raw Markdown in dashboard page previews~~ — FIXED 2026-06-26
+- **File:** `frontend/dashboard.py`
+- New `_preview_line()` helper strips inline Markdown (links, emphasis, inline code) from the first meaningful content line. Unit-tested in `tests/test_dashboard_preview.py`.
 
 ---
 
@@ -199,9 +202,9 @@ for NiceGUI ASGI compat). See docs/code-review-2026-06-10.md R-09.
 - **File:** `frontend/i18n.py`
 - Keys `roles`, `role_key`, `role_label`, `default_role`, `add` missing from both locales. Raw keys displayed in admin UI.
 
-### B-36: Setup wizard not i18n'd
-- **File:** `frontend/setup_wizard.py:26-40`
-- Hardcoded English strings, inconsistent with rest of app.
+### ~~B-36: Setup wizard not i18n'd~~ — FIXED 2026-06-26
+- **File:** `frontend/setup_wizard.py`
+- All five strings externalized to `setup_*` keys in `frontend/i18n.py` (EN + FR).
 
 ---
 
@@ -210,16 +213,16 @@ for NiceGUI ASGI compat). See docs/code-review-2026-06-10.md R-09.
 ### B-T1: `submit_step` authorization completely untested (Critical)
 - Tests never pass `actor_user` — the permission check path is never exercised.
 
-### B-T2: `submit_step` on completed/rejected request untested (Critical)
-- No status guard exists, no test confirms rejection.
+### ~~B-T2: `submit_step` on completed/rejected request untested~~ — FIXED 2026-06-26 (was a real bug)
+- The missing test exposed a missing guard: `submit_step` had no terminal-status check, so acting on a completed/rejected request re-executed the action (a rejected request could be "approved" back to completed). Added `if req.status != IN_PROGRESS: raise ValueError("Cannot act ...")` to `submit_step` + `save_draft`. Tests: `test_submit_step_rejects_action_on_{completed,rejected}_request`.
 
 ### ~~B-T3: CSRF middleware has zero tests~~ — RESOLVED 2026-06-10 (middleware deleted, R-09)
 
 ### B-T3 (original): CSRF middleware has zero tests (Critical)
 - Custom ASGI implementation with non-trivial skip/fallback logic, entirely untested.
 
-### B-T4: Token page has zero tests (High)
-- The only unauthenticated write path in the app — expired token, valid submission, replay — none tested.
+### ~~B-T4: Token page has zero tests~~ — CLOSED 2026-06-26
+- Valid-submission page path covered by `test_fieldref_encrypted_file_stored_encrypted`; expired/unknown-token page render by `test_token_page_shows_expired_for_unknown_token`. Expiry/replay also covered at service level (`test_token_expiry.py`, `test_token_security.py`).
 
 ### B-T5: `save_draft` authorization + validation untested (High)
 - Neither `actor_user` nor `actor_token` paths tested. `partial_save` flag not validated.
@@ -227,8 +230,8 @@ for NiceGUI ASGI compat). See docs/code-review-2026-06-10.md R-09.
 ### B-T6: `can_view_request` permission branch untested (High)
 - Active-step assignee branch with `assignee_permission` never tested.
 
-### B-T7: `list_events_batch` / `list_all_requests` untested (Medium)
-- Batched events grouping loop and admin query have no coverage.
+### ~~B-T7: `list_events_batch` / `list_all_requests` untested~~ — CLOSED 2026-06-26
+- `list_all_requests` covered via `test_returning_person_selection_prefills_and_submits`; `list_events_batch` now has `test_list_events_batch_groups_by_request` + `test_list_events_batch_empty`.
 
 ---
 

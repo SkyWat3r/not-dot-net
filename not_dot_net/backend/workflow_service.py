@@ -353,9 +353,19 @@ async def submit_step(
     is appended to it so the caller can surface the temp password.
     """
     async with session_scope() as session:
-        req = await session.get(WorkflowRequest, request_id)
+        # Row lock: serialize concurrent submits so two actors can't both read
+        # the same current_step and double-advance it (no-op on SQLite, real
+        # FOR UPDATE on PostgreSQL).
+        req = await session.get(WorkflowRequest, request_id, with_for_update=True)
         if req is None:
             raise ValueError(f"Request {request_id} not found")
+
+        # Terminal requests accept no further actions — otherwise a second call
+        # re-executes the action (duplicate events, re-fired notifications,
+        # possibly re-run AD effects), and a rejected request could be
+        # "approved" back into completed.
+        if req.status != RequestStatus.IN_PROGRESS:
+            raise ValueError(f"Cannot act on a request with status '{req.status}'")
 
         wf = await _get_workflow_config(req.type)
 
@@ -491,11 +501,13 @@ async def submit_step(
                 except Exception:
                     logger.exception("Failed to create tenure for onboarding request %s", req.id)
 
-        # Audit
+        # Audit. Token submissions have no logged-in actor (actor_id is None);
+        # attribute them to the target person's email so the trail isn't blank.
         from not_dot_net.backend.audit import log_audit
         await log_audit(
             "workflow", action,
             actor_id=actor_id,
+            actor_email=req.target_email if actor_token is not None else None,
             target_type="request", target_id=req.id,
             detail=f"step={event.step_key} status={new_status}",
         )
@@ -621,9 +633,12 @@ async def save_draft(
 ) -> WorkflowRequest:
     """Save partial data on a form step with partial_save enabled."""
     async with session_scope() as session:
-        req = await session.get(WorkflowRequest, request_id)
+        req = await session.get(WorkflowRequest, request_id, with_for_update=True)
         if req is None:
             raise ValueError(f"Request {request_id} not found")
+
+        if req.status != RequestStatus.IN_PROGRESS:
+            raise ValueError(f"Cannot act on a request with status '{req.status}'")
 
         wf = await _get_workflow_config(req.type)
 

@@ -603,3 +603,78 @@ async def test_onboarding_completion_marks_encrypted_files_for_retention(monkeyp
     async with get_session() as session:
         enc_file = await session.get(EncryptedFile, encrypted_file_id)
         assert enc_file.retained_until is not None
+
+
+# ---------------------------------------------------------------------------
+# B-T2: submit_step must refuse to act on a terminal (completed/rejected/
+# cancelled) request. Otherwise a second call re-executes the action —
+# duplicate events, re-fired notifications, possibly re-run AD effects.
+# ---------------------------------------------------------------------------
+
+
+async def test_submit_step_rejects_action_on_completed_request():
+    await _setup_roles()
+    staff = await _create_user(email="staff@test.com", role="staff")
+    director = await _create_user(email="director@test.com", role="director")
+    req = await create_request(
+        workflow_type="vpn_access",
+        created_by=staff.id,
+        data={"target_name": "Alice", "target_email": "alice@test.com"},
+    )
+    req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
+    req = await submit_step(req.id, director.id, "approve", data={}, actor_user=director, ad_creds=("admin", "pass"))
+    assert req.status == "completed"
+
+    with pytest.raises(ValueError, match="Cannot act"):
+        await submit_step(req.id, director.id, "approve", data={}, actor_user=director, ad_creds=("admin", "pass"))
+
+
+async def test_submit_step_rejects_action_on_rejected_request():
+    await _setup_roles()
+    staff = await _create_user(email="staff@test.com", role="staff")
+    director = await _create_user(email="director@test.com", role="director")
+    req = await create_request(
+        workflow_type="vpn_access",
+        created_by=staff.id,
+        data={"target_name": "Alice", "target_email": "alice@test.com"},
+    )
+    req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
+    req = await submit_step(req.id, director.id, "reject", data={}, comment="no", actor_user=director)
+    assert req.status == "rejected"
+
+    # A rejected request must not be resurrectable into "completed".
+    with pytest.raises(ValueError, match="Cannot act"):
+        await submit_step(req.id, director.id, "approve", data={}, actor_user=director, ad_creds=("admin", "pass"))
+
+
+# ---------------------------------------------------------------------------
+# B-T7: list_events_batch groups events by request, ordered by created_at.
+# ---------------------------------------------------------------------------
+
+
+async def test_list_events_batch_groups_by_request():
+    from not_dot_net.backend.workflow_service import list_events_batch
+
+    await _setup_roles()
+    staff = await _create_user(email="staff@test.com", role="staff")
+    r1 = await create_request(
+        workflow_type="vpn_access", created_by=staff.id,
+        data={"target_name": "A", "target_email": "a@test.com"},
+    )
+    r2 = await create_request(
+        workflow_type="vpn_access", created_by=staff.id,
+        data={"target_name": "B", "target_email": "b@test.com"},
+    )
+    await submit_step(r1.id, staff.id, "submit", data={}, actor_user=staff)
+
+    batch = await list_events_batch([r1.id, r2.id])
+
+    assert set(batch.keys()) == {r1.id, r2.id}
+    assert [e.action for e in batch[r1.id]] == ["create", "submit"]
+    assert [e.action for e in batch[r2.id]] == ["create"]
+
+
+async def test_list_events_batch_empty():
+    from not_dot_net.backend.workflow_service import list_events_batch
+
+    assert await list_events_batch([]) == {}

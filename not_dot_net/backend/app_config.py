@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel
 from sqlalchemy import JSON, String
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
 from not_dot_net.backend.db import Base, session_scope
@@ -35,9 +36,19 @@ class ConfigSection[T: BaseModel]:
             row = await session.get(AppSetting, self.prefix)
             if row:
                 row.value = data
-            else:
-                session.add(AppSetting(key=self.prefix, value=data))
-            await session.commit()
+                await session.commit()
+                return
+            session.add(AppSetting(key=self.prefix, value=data))
+            try:
+                await session.commit()
+            except IntegrityError:
+                # A concurrent writer inserted this prefix first (one-time race
+                # on a brand-new section). Fall back to updating their row.
+                await session.rollback()
+                row = await session.get(AppSetting, self.prefix)
+                if row is not None:
+                    row.value = data
+                    await session.commit()
 
     async def reset(self) -> None:
         async with session_scope() as session:

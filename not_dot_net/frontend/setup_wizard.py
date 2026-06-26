@@ -6,6 +6,7 @@ from sqlalchemy import select
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.users import ensure_default_admin
 from not_dot_net.config import org_config, OrgConfig
+from not_dot_net.frontend.i18n import t
 
 
 async def has_superuser() -> bool:
@@ -23,13 +24,13 @@ def setup():
             ui.navigate.to("/login")
             return
 
-        email = ui.input("Admin Email").props("outlined")
-        password = ui.input("Admin Password", password=True, password_toggle_button=True).props("outlined")
-        app_name = ui.input("Application Name", value="LPP Intranet").props("outlined")
+        email = ui.input(t("setup_admin_email")).props("outlined")
+        password = ui.input(t("setup_admin_password"), password=True, password_toggle_button=True).props("outlined")
+        app_name = ui.input(t("setup_app_name"), value="LPP Intranet").props("outlined")
 
         async def on_submit():
             if not email.value or not password.value:
-                ui.notify("Email and password required", color="negative")
+                ui.notify(t("setup_email_password_required"), color="negative")
                 return
             await ensure_default_admin(email.value, password.value)
             if app_name.value:
@@ -37,4 +38,4 @@ def setup():
                 await org_config.set(cfg.model_copy(update={"app_name": app_name.value}))
             ui.navigate.to("/login")
 
-        ui.button("Complete Setup", on_click=on_submit).props("color=primary")
+        ui.button(t("setup_complete"), on_click=on_submit).props("color=primary")
