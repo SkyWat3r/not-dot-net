@@ -8,7 +8,7 @@ from not_dot_net.backend.field_definitions import (
     field_definitions_config, save_field_definition, delete_field_definition,
     FieldDefinitionInUse, definition_usages,
 )
-from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
+from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig, _filter_step_data
 
 
 def test_resolve_inherits_unset_properties():
@@ -95,6 +95,16 @@ async def test_definition_usages_dedupes_repeated_ref_in_step():
         ]),
     }))
     assert await definition_usages("phone") == ["wf/s"]
+
+
+async def test_filter_step_data_allows_resolved_ref_name_rejects_injection():
+    await save_field_definition(FieldDefinition(key="phone", type="phone"))
+    step = WorkflowStepConfig(key="info", type="form", fields=[
+        FieldConfig(name="note", type="text"),
+        FieldRef(ref="phone"),
+    ])
+    out = await _filter_step_data(step, {"note": "hi", "phone": "+33...", "returning_user_id": "x"})
+    assert out == {"note": "hi", "phone": "+33..."}
 
 
 async def test_delete_in_use_definition_is_blocked():
