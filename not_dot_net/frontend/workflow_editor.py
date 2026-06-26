@@ -13,7 +13,7 @@ from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.permissions import get_permissions
 from not_dot_net.backend.roles import roles_config
 from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
-from not_dot_net.config import FieldConfig, NotificationRuleConfig, StepEffectConfig, WorkflowConfig, WorkflowStepConfig
+from not_dot_net.config import FieldConfig, FieldRef, NotificationRuleConfig, StepEffectConfig, WorkflowConfig, WorkflowStepConfig, resolve_field_ref
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_editor_options import (
     assignee_options,
@@ -71,6 +71,7 @@ class WorkflowEditorDialog:
         self._eligible_groups_snapshot: dict[str, str] = {}
         self._unlocked_fields: set[tuple[str, str, str]] = set()
         self._save_dirty_badge = None
+        self._field_defs: dict = {}
 
     @classmethod
     async def create(cls, user) -> "WorkflowEditorDialog":
@@ -84,6 +85,8 @@ class WorkflowEditorDialog:
         instance._eligible_groups_snapshot = {dn: dn for dn in cfg.eligible_groups}
         from not_dot_net.backend.vocabularies import list_vocabularies
         instance._vocab_keys = [v.key for v in await list_vocabularies()]
+        from not_dot_net.backend.field_definitions import field_definitions_config
+        instance._field_defs = dict((await field_definitions_config.get()).definitions)
         instance._build()
         return instance
 
@@ -308,6 +311,19 @@ class WorkflowEditorDialog:
         step.fields.append(FieldConfig(name="", type="text"))
         self._refresh_detail()
 
+    def add_field_ref(self, wf_key: str, step_key: str, ref_key: str) -> None:
+        step = self._find_step(wf_key, step_key)
+        step.fields.append(FieldRef(ref=ref_key))
+        self._refresh_detail()
+
+    def set_field_ref_override(self, wf_key: str, step_key: str, index: int,
+                               attr: str, value) -> None:
+        step = self._find_step(wf_key, step_key)
+        item = step.fields[index]
+        if not isinstance(item, FieldRef):
+            raise ValueError("not a field reference")
+        setattr(item, attr, value)   # value=None clears the override
+
     def set_field_attr(self, wf_key: str, step_key: str, index: int, attr: str, value) -> None:
         step = self._find_step(wf_key, step_key)
         field = step.fields[index]
@@ -325,7 +341,7 @@ class WorkflowEditorDialog:
             if step.key != step_key:
                 continue
             for f in step.fields:
-                if f.name == field_name:
+                if isinstance(f, FieldConfig) and f.name == field_name:
                     return True
         return False
 
@@ -427,7 +443,8 @@ class WorkflowEditorDialog:
                      ).classes("w-full").props("dense outlined stack-label").tooltip(t("wf_label_help"))
 
             with ui.expansion(t("wf_section_about_other"), icon="person_search").classes("w-full"):
-                field_names = sorted({f.name for s in wf.steps for f in s.fields if f.name})
+                field_names = sorted({f.name for s in wf.steps
+                                      for f in self._resolved_step_fields(s) if f.name})
                 if field_names:
                     options = {None: "(none)", **{n: n for n in field_names}}
                     ui.select(options, value=wf.target_email_field,
@@ -968,6 +985,19 @@ class WorkflowEditorDialog:
             return
         self._save_dirty_badge.visible = self.is_dirty()
 
+    def _resolved_step_fields(self, step) -> list:
+        """Resolve a step's fields against the definitions snapshot.
+        Drops dangling references (compute_warnings reports them separately)."""
+        out = []
+        for item in step.fields:
+            if isinstance(item, FieldRef):
+                defn = self._field_defs.get(item.ref)
+                if defn is not None:
+                    out.append(resolve_field_ref(item, defn))
+            else:
+                out.append(item)
+        return out
+
     def compute_warnings(self) -> list[str]:
         warnings: list[str] = []
         org_list_keys = set(self._vocab_keys)
@@ -981,7 +1011,7 @@ class WorkflowEditorDialog:
                     warnings.append(f"[{wf_key}] duplicate step key '{step.key}'")
                 seen_step_keys.add(step.key)
                 step_keys.append(step.key)
-            field_names = {f.name for s in wf.steps for f in s.fields}
+            field_names = {f.name for s in wf.steps for f in self._resolved_step_fields(s)}
             if wf.target_email_field and wf.target_email_field not in field_names:
                 warnings.append(
                     f"[{wf_key}] target_email_field '{wf.target_email_field}' does not match any field name"
@@ -992,13 +1022,19 @@ class WorkflowEditorDialog:
                         warnings.append(
                             f"[{wf_key}/{step.key}] corrections_target '{step.corrections_target}' does not exist"
                         )
-                for f in step.fields:
+                for item in step.fields:
+                    if isinstance(item, FieldRef) and item.ref not in self._field_defs:
+                        warnings.append(
+                            f"[{wf_key}/{step.key}] ref '{item.ref}' is not a known field definition"
+                        )
+                resolved = self._resolved_step_fields(step)
+                for f in resolved:
                     if f.options_key and f.options_key not in org_list_keys:
                         warnings.append(
                             f"[{wf_key}/{step.key}/{f.name}] options_key '{f.options_key}' is not a known vocabulary"
                         )
-                checkbox_names = {f.name for f in step.fields if f.type == "checkbox"}
-                for f in step.fields:
+                checkbox_names = {f.name for f in resolved if f.type == "checkbox"}
+                for f in resolved:
                     if not f.visible_when:
                         continue
                     for k in f.visible_when:

@@ -9,6 +9,7 @@ from not_dot_net.backend.field_definitions import (
     FieldDefinitionInUse, definition_usages,
 )
 from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig, _filter_step_data
+from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
 
 
 def test_resolve_inherits_unset_properties():
@@ -119,3 +120,45 @@ async def test_delete_in_use_definition_is_blocked():
     assert "onboard/info" in exc.value.usages
     cfg = await field_definitions_config.get()
     assert "phone" in cfg.definitions   # not deleted
+
+
+def _editor_with(working: WorkflowsConfig, defs: dict) -> WorkflowEditorDialog:
+    ed = WorkflowEditorDialog(user=None, original=WorkflowsConfig(workflows={}))
+    ed.working_copy = working
+    ed._vocab_keys = []
+    ed._field_defs = defs
+    return ed
+
+
+def test_add_field_ref_appends_fieldref():
+    working = WorkflowsConfig(workflows={
+        "wf": WorkflowConfig(label="WF", steps=[WorkflowStepConfig(key="s", type="form", fields=[])]),
+    })
+    ed = _editor_with(working, {"phone": FieldDefinition(key="phone", type="phone")})
+    ed.add_field_ref("wf", "s", "phone")
+    field = working.workflows["wf"].steps[0].fields[0]
+    assert isinstance(field, FieldRef) and field.ref == "phone"
+
+
+def test_set_field_ref_override_and_clear():
+    working = WorkflowsConfig(workflows={
+        "wf": WorkflowConfig(label="WF", steps=[
+            WorkflowStepConfig(key="s", type="form", fields=[FieldRef(ref="phone")]),
+        ]),
+    })
+    ed = _editor_with(working, {"phone": FieldDefinition(key="phone", type="phone")})
+    ed.set_field_ref_override("wf", "s", 0, "required", True)
+    assert working.workflows["wf"].steps[0].fields[0].required is True
+    ed.set_field_ref_override("wf", "s", 0, "required", None)
+    assert working.workflows["wf"].steps[0].fields[0].required is None
+
+
+def test_compute_warnings_flags_dangling_ref():
+    working = WorkflowsConfig(workflows={
+        "wf": WorkflowConfig(label="WF", steps=[
+            WorkflowStepConfig(key="s", type="form", fields=[FieldRef(ref="gone")]),
+        ]),
+    })
+    ed = _editor_with(working, {})
+    warnings = ed.compute_warnings()
+    assert any("gone" in w and "field definition" in w for w in warnings)
