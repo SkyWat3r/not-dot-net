@@ -543,6 +543,20 @@ async def test_out_of_service_notifies_managers():
     assert "mgr@test.com" in _recipients(send)
 
 
+async def test_out_of_service_dedupes_manager_who_is_also_booker():
+    await _setup_roles()
+    # admin is both a manage_bookings manager AND the resource's booker:
+    # the dedup must collapse the two roles to a single email.
+    admin = await _create_user(email="mgrbook@test.com", role="admin")
+    r = await _create_test_resource(name="PC-OOS-DEDUP")
+    start = _valid_start()
+    await create_booking(r.id, admin.id, start, start + timedelta(days=2), actor=admin)
+    with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
+        await set_resource_status(r.id, "out_of_service", actor=admin)
+    assert send.await_count == 1
+    assert send.await_args.args[0] == "mgrbook@test.com"
+
+
 # --- Two-stage deletion ---
 
 

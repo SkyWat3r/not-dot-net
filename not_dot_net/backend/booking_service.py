@@ -117,6 +117,7 @@ async def delete_resource(resource_id: uuid.UUID, actor=None) -> None:
             raise ValueError(f"Resource {resource_id} not found")
         if resource.active:
             raise BookingValidationError("Retire the resource before deleting it")
+        deleted_name = resource.name
         await session.delete(resource)
         await session.commit()
 
@@ -125,11 +126,14 @@ async def delete_resource(resource_id: uuid.UUID, actor=None) -> None:
         "resource", "delete",
         actor_id=(actor.id if actor else None),
         target_type="resource", target_id=resource_id,
-        detail="",
+        detail=f"name={deleted_name}",
     )
 
 
 async def restore_resource(resource_id: uuid.UUID, actor=None) -> Resource:
+    """Un-retire a resource. Forces status back to AVAILABLE, deliberately
+    bypassing the FSM: the resource may have been retired from any state, and
+    whatever physical state it held is stale after sitting out of the pool."""
     if actor is not None:
         await check_permission(actor, MANAGE_BOOKINGS)
     async with session_scope() as session:
