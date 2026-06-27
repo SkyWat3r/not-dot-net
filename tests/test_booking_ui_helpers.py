@@ -5,6 +5,7 @@ from not_dot_net.frontend.bookings import (
     _minimum_booking_start,
     _normalize_booking_range,
     _qdate_option_date,
+    _status_color,
     _truncate_booking_owner,
 )
 
@@ -67,6 +68,14 @@ def test_truncate_booking_owner_limits_display_name():
     assert _truncate_booking_owner("lucas.bazin@lpp.polytechnique.fr") == (
         "lucas.bazin@lpp.polytech..."
     )
+
+
+def test_status_color_maps_known_states():
+    assert _status_color("available") == "positive"
+    assert _status_color("out_of_service") == "negative"
+    assert _status_color("ready") == "primary"
+    # unknown falls back to grey
+    assert _status_color("nonsense") == "grey"
 
 
 def test_format_booking_period_shows_inclusive_last_day():

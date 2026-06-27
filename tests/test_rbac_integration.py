@@ -14,6 +14,7 @@ from not_dot_net.backend.roles import RoleDefinition, roles_config
 from not_dot_net.backend.booking_service import (
     create_resource,
     delete_resource,
+    restore_resource,
     update_resource,
     create_booking,
     cancel_booking,
@@ -83,6 +84,8 @@ async def test_booker_can_manage_resources():
     r = await create_resource("Test PC", "desktop", actor=booker)
     assert r.name == "Test PC"
     await update_resource(r.id, actor=booker, name="Updated PC")
+    # Two-stage delete: retire first, then permanently delete
+    await update_resource(r.id, actor=booker, active=False)
     await delete_resource(r.id, actor=booker)
 
 

@@ -5,9 +5,11 @@ from datetime import date, timedelta
 
 from nicegui import ui
 
+from not_dot_net.backend.booking_models import ResourceStatus
 from not_dot_net.backend.booking_service import (
     BookingConflictError,
     BookingValidationError,
+    available_transitions,
     cancel_booking,
     create_booking,
     create_resource,
@@ -15,6 +17,8 @@ from not_dot_net.backend.booking_service import (
     list_bookings_for_resource,
     list_bookings_for_user,
     list_resources,
+    restore_resource,
+    set_resource_status,
     update_resource,
 )
 from not_dot_net.config import bookings_config
@@ -302,6 +306,20 @@ async def _render_resource_list(outer_container, area, resources, user, is_admin
                     )
 
 
+_STATUS_COLOR = {
+    "available": "positive",
+    "booked": "orange",
+    "ready": "primary",
+    "in_use": "blue",
+    "returned": "purple",
+    "out_of_service": "negative",
+}
+
+
+def _status_color(status: str) -> str:
+    return _STATUS_COLOR.get(status, "grey")
+
+
 def _get_resource_for_booking(resource_id, resources):
     for r in resources:
         if r.id == resource_id:
@@ -335,8 +353,10 @@ async def _resource_card(outer_container, res, user, is_admin, state,
                 color="positive" if is_available else "orange",
             )
 
-        if not res.active:
-            ui.badge("inactive", color="grey").classes("mt-1")
+        with ui.row().classes("items-center gap-1 mt-1"):
+            ui.badge(t(f"status_{res.status}"), color=_status_color(res.status))
+            if not res.active:
+                ui.badge(t("retired"), color="grey")
 
         detail = ui.column().classes("w-full mt-2")
         detail.set_visibility(False)
@@ -508,6 +528,27 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
     # Admin controls
     if is_admin:
         ui.separator().classes("mt-3")
+
+        if res.active:
+            with ui.row().classes("items-center gap-2 mt-2"):
+                ui.label(t("status") + ":").classes("text-sm")
+                ui.badge(t(f"status_{res.status}"), color=_status_color(res.status))
+            with ui.row().classes("gap-2 mt-1 flex-wrap"):
+                for nxt in available_transitions(res.status):
+                    async def do_transition(target=nxt):
+                        try:
+                            await set_resource_status(res.id, target, actor=user)
+                        except Exception as e:
+                            ui.notify(str(e), color="negative")
+                            return
+                        ui.notify(t("status_updated"), color="positive")
+                        await _render_bookings(outer_container, user)
+
+                    ui.button(t(f"mark_{nxt}"), on_click=do_transition).props(
+                        "flat dense color=primary"
+                    )
+
+        ui.separator().classes("mt-3")
         with ui.row().classes("gap-2 mt-2"):
             ui.button(
                 t("edit_resource"), icon="edit",
@@ -516,18 +557,64 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                 ),
             ).props("flat dense color=primary")
 
-            async def do_delete():
-                try:
-                    await delete_resource(res.id, actor=user)
-                except Exception as e:
-                    ui.notify(str(e), color="negative")
-                    return
-                ui.notify(t("resource_deleted"), color="positive")
-                await _render_bookings(outer_container, user)
+            if res.active:
+                async def do_retire():
+                    with ui.dialog() as dlg, ui.card():
+                        ui.label(t("retire_confirm"))
 
-            ui.button(
-                t("delete"), icon="delete", on_click=do_delete,
-            ).props("flat dense color=negative")
+                        async def confirm():
+                            dlg.close()
+                            try:
+                                await update_resource(res.id, active=False, actor=user)
+                            except Exception as e:
+                                ui.notify(str(e), color="negative")
+                                return
+                            ui.notify(t("resource_retired"), color="positive")
+                            await _render_bookings(outer_container, user)
+
+                        with ui.row():
+                            ui.button(t("cancel"), on_click=dlg.close).props("flat")
+                            ui.button(t("retire"), on_click=confirm).props("color=warning")
+                    dlg.open()
+
+                ui.button(t("retire"), icon="archive", on_click=do_retire).props(
+                    "flat dense color=warning"
+                )
+            else:
+                async def do_restore():
+                    try:
+                        await restore_resource(res.id, actor=user)
+                    except Exception as e:
+                        ui.notify(str(e), color="negative")
+                        return
+                    ui.notify(t("resource_restored"), color="positive")
+                    await _render_bookings(outer_container, user)
+
+                async def do_delete():
+                    with ui.dialog() as dlg, ui.card():
+                        ui.label(t("delete_confirm"))
+
+                        async def confirm():
+                            dlg.close()
+                            try:
+                                await delete_resource(res.id, actor=user)
+                            except Exception as e:
+                                ui.notify(str(e), color="negative")
+                                return
+                            ui.notify(t("resource_deleted"), color="positive")
+                            await _render_bookings(outer_container, user)
+
+                        with ui.row():
+                            ui.button(t("cancel"), on_click=dlg.close).props("flat")
+                            ui.button(t("delete"), on_click=confirm).props("color=negative")
+                    dlg.open()
+
+                ui.button(t("restore"), icon="unarchive", on_click=do_restore).props(
+                    "flat dense color=positive"
+                )
+                ui.button(t("delete"), icon="delete", on_click=do_delete).props(
+                    "flat dense color=negative"
+                )
 
 
 async def _show_resource_dialog(outer_container, user, resource=None):
