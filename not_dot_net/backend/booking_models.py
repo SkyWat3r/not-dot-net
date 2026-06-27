@@ -2,11 +2,21 @@
 
 import uuid
 from datetime import date, datetime
+from enum import Enum as PyEnum
 
 from sqlalchemy import Date, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
 from not_dot_net.backend.db import Base
+
+
+class ResourceStatus(str, PyEnum):
+    AVAILABLE = "available"           # nothing physical in flight
+    BOOKED = "booked"                 # reserved, IT hasn't prepped it
+    READY = "ready"                   # prepped → ready for pickup
+    IN_USE = "in_use"                 # picked up by the user
+    RETURNED = "returned"             # brought back, awaiting IT checkup
+    OUT_OF_SERVICE = "out_of_service" # broken / cleanup
 
 
 class Resource(MappedAsDataclass, Base, kw_only=True):
@@ -19,6 +29,9 @@ class Resource(MappedAsDataclass, Base, kw_only=True):
     location: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
     specs: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)  # {cpu, ram, hdd, gpu}
     active: Mapped[bool] = mapped_column(default=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default="available", server_default="available"
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None)
 
 

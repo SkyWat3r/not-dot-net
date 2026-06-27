@@ -458,3 +458,12 @@ async def test_cancel_booking_non_owner_non_admin_rejected():
     b = await create_booking(r.id, user1.id, start, start + timedelta(days=3))
     with pytest.raises(PermissionError):
         await cancel_booking(b.id, actor=user2)
+
+
+# --- Resource status lifecycle ---
+
+
+async def test_new_resource_defaults_to_available_status():
+    r = await _create_test_resource(name="PC-STATUS")
+    fetched = await get_resource_by_id(r.id)
+    assert fetched.status == "available"
