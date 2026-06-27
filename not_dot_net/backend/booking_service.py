@@ -115,8 +115,40 @@ async def delete_resource(resource_id: uuid.UUID, actor=None) -> None:
         resource = await session.get(Resource, resource_id)
         if resource is None:
             raise ValueError(f"Resource {resource_id} not found")
+        if resource.active:
+            raise BookingValidationError("Retire the resource before deleting it")
         await session.delete(resource)
         await session.commit()
+
+    from not_dot_net.backend.audit import log_audit
+    await log_audit(
+        "resource", "delete",
+        actor_id=(actor.id if actor else None),
+        target_type="resource", target_id=resource_id,
+        detail="",
+    )
+
+
+async def restore_resource(resource_id: uuid.UUID, actor=None) -> Resource:
+    if actor is not None:
+        await check_permission(actor, MANAGE_BOOKINGS)
+    async with session_scope() as session:
+        resource = await session.get(Resource, resource_id)
+        if resource is None:
+            raise ValueError(f"Resource {resource_id} not found")
+        resource.active = True
+        resource.status = ResourceStatus.AVAILABLE.value
+        await session.commit()
+        await session.refresh(resource)
+
+    from not_dot_net.backend.audit import log_audit
+    await log_audit(
+        "resource", "restore",
+        actor_id=(actor.id if actor else None),
+        target_type="resource", target_id=resource_id,
+        detail="",
+    )
+    return resource
 
 
 _STATUS_NOTICE: dict[ResourceStatus, tuple[str, str]] = {

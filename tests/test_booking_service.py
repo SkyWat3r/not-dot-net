@@ -17,6 +17,7 @@ from not_dot_net.backend.booking_service import (
     list_bookings_for_resource,
     list_bookings_for_user,
     list_resources,
+    restore_resource,
     set_resource_status,
     update_resource,
 )
@@ -97,6 +98,7 @@ async def test_update_resource_rejects_immutable_fields():
 
 async def test_delete_resource():
     r = await _create_test_resource()
+    await update_resource(r.id, active=False)  # retire before deleting
     await delete_resource(r.id)
     assert await get_resource_by_id(r.id) is None
 
@@ -539,3 +541,45 @@ async def test_out_of_service_notifies_managers():
     with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
         await set_resource_status(r.id, "out_of_service", actor=admin)
     assert "mgr@test.com" in _recipients(send)
+
+
+# --- Two-stage deletion ---
+
+
+async def test_delete_active_resource_is_blocked():
+    await _setup_roles()
+    admin = await _create_user(email="del1@test.com", role="admin")
+    r = await _create_test_resource(name="PC-DEL")  # active by default
+    with pytest.raises(BookingValidationError):
+        await delete_resource(r.id, actor=admin)
+
+
+async def test_delete_retired_resource_succeeds():
+    await _setup_roles()
+    admin = await _create_user(email="del2@test.com", role="admin")
+    r = await _create_test_resource(name="PC-DEL2")
+    await update_resource(r.id, active=False, actor=admin)  # retire
+    await delete_resource(r.id, actor=admin)
+    assert await get_resource_by_id(r.id) is None
+
+
+async def test_restore_reactivates_and_resets_status():
+    await _setup_roles()
+    admin = await _create_user(email="res1@test.com", role="admin")
+    r = await _create_test_resource(name="PC-RES")
+    await set_resource_status(r.id, "out_of_service", actor=admin)
+    await update_resource(r.id, active=False, actor=admin)  # retire
+    restored = await restore_resource(r.id, actor=admin)
+    assert restored.active is True
+    assert restored.status == "available"
+
+
+async def test_out_of_service_does_not_block_booking():
+    await _setup_roles()
+    admin = await _create_user(email="oosb@test.com", role="admin")
+    owner = await _create_user(email="oosu@test.com", role="staff")
+    r = await _create_test_resource(name="PC-OOSB")
+    await set_resource_status(r.id, "out_of_service", actor=admin)
+    start = _valid_start()
+    booking = await create_booking(r.id, owner.id, start, start + timedelta(days=2), actor=owner)
+    assert booking.id is not None
