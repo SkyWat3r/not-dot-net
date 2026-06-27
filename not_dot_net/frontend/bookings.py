@@ -5,7 +5,6 @@ from datetime import date, timedelta
 
 from nicegui import ui
 
-from not_dot_net.backend.booking_models import ResourceStatus
 from not_dot_net.backend.booking_service import (
     BookingConflictError,
     BookingValidationError,
