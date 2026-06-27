@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from not_dot_net.backend.booking_service import (
     BookingConflictError,
     BookingValidationError,
+    available_transitions,
     cancel_booking,
     create_booking,
     create_resource,
@@ -15,9 +16,10 @@ from not_dot_net.backend.booking_service import (
     list_bookings_for_resource,
     list_bookings_for_user,
     list_resources,
+    set_resource_status,
     update_resource,
 )
-from not_dot_net.backend.booking_models import Booking, Resource
+from not_dot_net.backend.booking_models import Booking, Resource, ResourceStatus
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.roles import RoleDefinition, roles_config
 from not_dot_net.config import BookingsConfig, bookings_config
@@ -467,3 +469,33 @@ async def test_new_resource_defaults_to_available_status():
     r = await _create_test_resource(name="PC-STATUS")
     fetched = await get_resource_by_id(r.id)
     assert fetched.status == "available"
+
+
+async def test_set_resource_status_legal_transition():
+    await _setup_roles()
+    admin = await _create_user(email="it@test.com", role="admin")
+    r = await _create_test_resource(name="PC-FSM")
+    updated = await set_resource_status(r.id, "ready", actor=admin)
+    assert updated.status == "ready"
+
+
+async def test_set_resource_status_illegal_transition_raises():
+    await _setup_roles()
+    admin = await _create_user(email="it2@test.com", role="admin")
+    r = await _create_test_resource(name="PC-FSM2")
+    # available → in_use is not allowed (must go via ready)
+    with pytest.raises(BookingValidationError):
+        await set_resource_status(r.id, "in_use", actor=admin)
+
+
+async def test_set_resource_status_requires_permission():
+    await _setup_roles()
+    plain = await _create_user(email="plain@test.com", role="staff")
+    r = await _create_test_resource(name="PC-FSM3")
+    with pytest.raises(PermissionError):
+        await set_resource_status(r.id, "ready", actor=plain)
+
+
+def test_available_transitions_lists_legal_next_states():
+    assert available_transitions("in_use") == ["out_of_service", "returned"]
+    assert available_transitions("out_of_service") == ["available"]

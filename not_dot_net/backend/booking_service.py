@@ -8,13 +8,29 @@ from html import escape
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from not_dot_net.backend.booking_models import Booking, Resource
+from not_dot_net.backend.booking_models import Booking, Resource, ResourceStatus
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.mail import send_mail
 from not_dot_net.backend.permissions import check_permission, has_permissions, permission
 from not_dot_net.config import bookings_config, org_config
 
 MANAGE_BOOKINGS = permission("manage_bookings", "Manage bookings", "Create/edit/delete resources and software")
+
+ALLOWED_TRANSITIONS: dict[ResourceStatus, set[ResourceStatus]] = {
+    ResourceStatus.AVAILABLE:      {ResourceStatus.BOOKED, ResourceStatus.READY, ResourceStatus.OUT_OF_SERVICE},
+    ResourceStatus.BOOKED:         {ResourceStatus.READY, ResourceStatus.AVAILABLE, ResourceStatus.OUT_OF_SERVICE},
+    ResourceStatus.READY:          {ResourceStatus.IN_USE, ResourceStatus.AVAILABLE, ResourceStatus.OUT_OF_SERVICE},
+    ResourceStatus.IN_USE:         {ResourceStatus.RETURNED, ResourceStatus.OUT_OF_SERVICE},
+    ResourceStatus.RETURNED:       {ResourceStatus.AVAILABLE, ResourceStatus.OUT_OF_SERVICE},
+    ResourceStatus.OUT_OF_SERVICE: {ResourceStatus.AVAILABLE},
+}
+
+
+def available_transitions(status: str) -> list[str]:
+    """Legal next status values from the given status, sorted for stable UI."""
+    nexts = ALLOWED_TRANSITIONS[ResourceStatus(status)]
+    return sorted(s.value for s in nexts)
+
 
 logger = logging.getLogger("not_dot_net.booking_service")
 
@@ -101,6 +117,42 @@ async def delete_resource(resource_id: uuid.UUID, actor=None) -> None:
             raise ValueError(f"Resource {resource_id} not found")
         await session.delete(resource)
         await session.commit()
+
+
+async def _notify_status_change(resource: Resource, new_status: ResourceStatus,
+                                today: date) -> None:
+    return None
+
+
+async def set_resource_status(resource_id: uuid.UUID, new_status, actor=None,
+                              today: date | None = None) -> Resource:
+    if actor is not None:
+        await check_permission(actor, MANAGE_BOOKINGS)
+    target = ResourceStatus(new_status)
+    today = today or date.today()
+    async with session_scope() as session:
+        resource = await session.get(Resource, resource_id, with_for_update=True)
+        if resource is None:
+            raise ValueError(f"Resource {resource_id} not found")
+        current = ResourceStatus(resource.status)
+        if target not in ALLOWED_TRANSITIONS[current]:
+            raise BookingValidationError(
+                f"Cannot change status from {current.value} to {target.value}"
+            )
+        old = resource.status
+        resource.status = target.value
+        await session.commit()
+        await session.refresh(resource)
+
+    from not_dot_net.backend.audit import log_audit
+    await log_audit(
+        "resource", "status",
+        actor_id=(actor.id if actor else None),
+        target_type="resource", target_id=resource_id,
+        detail=f"{old}→{target.value}",
+    )
+    await _notify_status_change(resource, target, today)  # implemented in Task 3
+    return resource
 
 
 # --- Bookings ---
