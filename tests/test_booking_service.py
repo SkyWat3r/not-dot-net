@@ -3,6 +3,7 @@
 import pytest
 import uuid
 from datetime import date, timedelta
+from unittest.mock import AsyncMock, patch
 
 from not_dot_net.backend.booking_service import (
     BookingConflictError,
@@ -499,3 +500,42 @@ async def test_set_resource_status_requires_permission():
 def test_available_transitions_lists_legal_next_states():
     assert available_transitions("in_use") == ["out_of_service", "returned"]
     assert available_transitions("out_of_service") == ["available"]
+
+
+# --- Status-change notifications ---
+
+
+def _recipients(send_mock) -> set[str]:
+    return {call.args[0] for call in send_mock.await_args_list}
+
+
+async def test_ready_notifies_current_booking_user():
+    await _setup_roles()
+    admin = await _create_user(email="it-r@test.com", role="admin")
+    owner = await _create_user(email="owner-r@test.com", role="staff")
+    r = await _create_test_resource(name="PC-NOTIFY")
+    start = _valid_start()
+    await create_booking(r.id, owner.id, start, start + timedelta(days=3), actor=owner)
+    with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
+        # today inside the booking window so it is the "current" booking
+        await set_resource_status(r.id, "ready", actor=admin, today=start)
+    send.assert_awaited_once()
+    assert send.await_args.args[0] == "owner-r@test.com"
+
+
+async def test_ready_with_no_booking_sends_no_email():
+    await _setup_roles()
+    admin = await _create_user(email="it-n@test.com", role="admin")
+    r = await _create_test_resource(name="PC-NOBOOK")
+    with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
+        await set_resource_status(r.id, "ready", actor=admin)
+    send.assert_not_awaited()
+
+
+async def test_out_of_service_notifies_managers():
+    await _setup_roles()
+    admin = await _create_user(email="mgr@test.com", role="admin")
+    r = await _create_test_resource(name="PC-OOS")
+    with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
+        await set_resource_status(r.id, "out_of_service", actor=admin)
+    assert "mgr@test.com" in _recipients(send)

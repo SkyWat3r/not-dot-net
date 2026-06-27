@@ -119,9 +119,89 @@ async def delete_resource(resource_id: uuid.UUID, actor=None) -> None:
         await session.commit()
 
 
+_STATUS_NOTICE: dict[ResourceStatus, tuple[str, str]] = {
+    ResourceStatus.READY: (
+        "Your resource is ready for pickup",
+        "Your booked resource is ready for pickup.",
+    ),
+    ResourceStatus.IN_USE: (
+        "Resource pickup confirmed",
+        "We've recorded that you picked up your booked resource.",
+    ),
+    ResourceStatus.RETURNED: (
+        "Resource return confirmed",
+        "We've recorded the return of your booked resource. Thank you.",
+    ),
+}
+
+
+def render_resource_status_body(*, user: User, resource: Resource, headline: str) -> str:
+    display_name = user.full_name or user.email
+    return (
+        f"<p>Hello {escape(display_name)},</p>"
+        f"<p>{escape(headline)}</p>"
+        "<table>"
+        f"<tr><td><strong>Resource</strong></td><td>{escape(resource.name)}</td></tr>"
+        f"<tr><td><strong>Location</strong></td><td>{escape(resource.location or '-')}</td></tr>"
+        "</table>"
+    )
+
+
+async def _current_booking_user(session, resource_id: uuid.UUID, today: date) -> User | None:
+    """The user of the active booking (start ≤ today < end); else the nearest
+    not-yet-ended upcoming booking; else None."""
+    result = await session.execute(
+        select(Booking, User)
+        .join(User, Booking.user_id == User.id)
+        .where(Booking.resource_id == resource_id, Booking.end_date > today)
+        .order_by(Booking.start_date)
+    )
+    rows = list(result.all())
+    for booking, user in rows:
+        if booking.start_date <= today:
+            return user
+    return rows[0][1] if rows else None
+
+
+async def _out_of_service_recipients(session) -> list[User]:
+    result = await session.execute(select(User).where(User.is_active == True))  # noqa: E712
+    users = list(result.scalars().all())
+    return [u for u in users if u.is_superuser or await has_permissions(u, MANAGE_BOOKINGS)]
+
+
 async def _notify_status_change(resource: Resource, new_status: ResourceStatus,
                                 today: date) -> None:
-    return None
+    cfg = await org_config.get()
+    app_name = (cfg.app_name or "not-dot-net").strip() or "not-dot-net"
+    async with session_scope() as session:
+        booking_user = await _current_booking_user(session, resource.id, today)
+
+        if new_status in _STATUS_NOTICE:
+            if booking_user is None or not booking_user.email:
+                return
+            subject, headline = _STATUS_NOTICE[new_status]
+            await send_mail(
+                booking_user.email,
+                f"[{app_name}] {subject}",
+                render_resource_status_body(user=booking_user, resource=resource, headline=headline),
+            )
+            return
+
+        if new_status is ResourceStatus.OUT_OF_SERVICE:
+            targets = await _out_of_service_recipients(session)
+            if booking_user is not None:
+                targets.append(booking_user)
+            seen: set[str] = set()
+            headline = f"{resource.name} has been marked out of service."
+            for u in targets:
+                if not u.email or u.email in seen:
+                    continue
+                seen.add(u.email)
+                await send_mail(
+                    u.email,
+                    f"[{app_name}] Resource out of service: {resource.name}",
+                    render_resource_status_body(user=u, resource=resource, headline=headline),
+                )
 
 
 async def set_resource_status(resource_id: uuid.UUID, new_status, actor=None,
