@@ -77,6 +77,19 @@ def _layout_editor(cfg: MailTemplatesConfig) -> None:
     ui.label(t("email_layout_help")).classes("text-xs text-grey")
     layout = ui.codemirror(value=cfg.layout or DEFAULT_LAYOUT, language="html") \
         .classes("w-full grow").style("min-height:0")
+    preview = ui.html().classes("w-full border q-pa-sm")
+
+    def do_preview():
+        ctx = {"app_name": "LPP Intranet", "app_url": "#", "recipient_name": "Sample"}
+        sample = EmailTemplate(
+            subject="(layout preview)",
+            body="<p>Hello {{ recipient_name }}, this is a sample message body.</p>",
+        )
+        try:
+            _, html = _render(sample, layout.value, ctx)
+            preview.set_content(html)
+        except Exception as exc:  # surface template errors inline
+            preview.set_content(f"<pre class='text-negative'>{exc}</pre>")
 
     async def save():
         cfg.layout = layout.value
@@ -90,5 +103,6 @@ def _layout_editor(cfg: MailTemplatesConfig) -> None:
         ui.notify(t("reset_done"), type="info")
 
     with ui.row():
+        ui.button(t("preview"), on_click=do_preview).props("flat")
         ui.button(t("save"), on_click=save)
         ui.button(t("reset_to_default"), on_click=reset).props("flat color=negative")

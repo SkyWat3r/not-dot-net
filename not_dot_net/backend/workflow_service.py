@@ -213,6 +213,10 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
             user = await session.get(User, user_id)
             return user.email if user else None
 
+        async def get_user_name(user_id):
+            user = await session.get(User, user_id)
+            return (user.full_name or user.email) if user else None
+
         async def get_users_by_role(role_str):
             result = await session.execute(
                 select(User).where(
@@ -237,6 +241,7 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
             get_user_email=get_user_email,
             get_users_by_role=get_users_by_role,
             get_users_by_permission=get_users_by_permission,
+            get_user_name=get_user_name,
         )
 
 

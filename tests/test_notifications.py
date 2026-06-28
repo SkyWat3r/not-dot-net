@@ -212,6 +212,45 @@ async def test_notify_submit_with_token_uses_token_link_deeplink():
     assert any("http://x/workflow/token/tok-9" in b for b in sent)
 
 
+@pytest.mark.asyncio
+async def test_notify_submit_includes_requester_name():
+    req = FakeRequest(token=None, id="req-3", created_by="u-1")
+    sent = []
+
+    async def fake_send(to, subject, body):
+        sent.append(body)
+
+    async def users_by_role(role):
+        class U: ...
+        u = U(); u.email = "director@lpp.fr"; return [u]
+
+    async def name_for(uid):
+        return "Marie Curie" if uid == "u-1" else None
+
+    with patch("not_dot_net.backend.mail.send_mail", new=fake_send), \
+         patch("not_dot_net.config.org_config.get", new=AsyncMock(
+             return_value=type("O", (), {"base_url": "http://x", "app_name": "LPP"})())):
+        await notify(req, "submit", "request", VPN_WORKFLOW, AsyncMock(), users_by_role,
+                     get_user_name=name_for)
+
+    assert any("Marie Curie" in b for b in sent), "submit email should name the requester"
+
+
+def test_resolve_step_label_uses_step_display():
+    from not_dot_net.backend.notifications import _resolve_step_label
+    wf = WorkflowConfig(label="W", steps=[
+        WorkflowStepConfig(key="approval", type="approval", label="Manager approval",
+                           actions=["approve"]),
+    ], notifications=[])
+    assert _resolve_step_label(wf, "approval") == "Manager approval"
+
+
+def test_resolve_step_label_falls_back_to_key_when_step_missing():
+    from not_dot_net.backend.notifications import _resolve_step_label
+    wf = WorkflowConfig(label="W", steps=[], notifications=[])
+    assert _resolve_step_label(wf, "mystery_step") == "mystery_step"
+
+
 # --- Tests: full notify pipeline ---
 
 async def test_notify_sends_to_resolved_recipients():

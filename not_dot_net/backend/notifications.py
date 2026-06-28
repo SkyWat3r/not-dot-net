@@ -1,10 +1,17 @@
 """Event-driven notification engine for workflow transitions."""
 
-from not_dot_net.config import WorkflowConfig, NotificationRuleConfig
+from not_dot_net.config import WorkflowConfig, NotificationRuleConfig, step_display
 
 
 def _display_from_email(email: str) -> str:
     return (email or "").split("@")[0]
+
+
+def _resolve_step_label(workflow: WorkflowConfig, step_key: str) -> str:
+    """Friendly label for a step key (explicit label or prettified key),
+    falling back to the raw key when the step is unknown."""
+    step = next((s for s in workflow.steps if s.key == step_key), None)
+    return step_display(step) if step else step_key
 
 
 def _matching_rules(
@@ -59,6 +66,7 @@ async def notify(
     get_user_email,
     get_users_by_role,
     get_users_by_permission=None,
+    get_user_name=None,
 ) -> list[str]:
     """Fire notifications for a workflow event. Returns list of emails sent to."""
     from not_dot_net.backend.mail import send_mail
@@ -73,6 +81,11 @@ async def notify(
     if not rules:
         return []
 
+    requester_name = ""
+    if get_user_name and getattr(request, "created_by", None):
+        requester_name = (await get_user_name(request.created_by)) or ""
+    step_label = _resolve_step_label(workflow, step_key)
+
     all_sent = []
     for rule in rules:
         recipients = await resolve_recipients(
@@ -84,8 +97,8 @@ async def notify(
             "app_url": f"{base_url}/",
             "workflow_label": workflow.label,
             "request_url": f"{base_url}/workflow/request/{request.id}",
-            "step_label": step_key,
-            "requester_name": "",
+            "step_label": step_label,
+            "requester_name": requester_name,
         }
         if request.token and event in ("submit", "request_corrections"):
             template_key = "token_link" if event == "submit" else "corrections_with_link"
