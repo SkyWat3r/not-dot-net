@@ -182,7 +182,6 @@ async def _send_token_link(req, wf):
     """Send the token link email directly to the target person."""
     from not_dot_net.backend.mail import send_mail
     from not_dot_net.backend.email_templates import render_email
-    from not_dot_net.backend.notifications import _display_from_email
     from not_dot_net.config import org_config
 
     if not req.target_email or not req.token:
@@ -193,7 +192,7 @@ async def _send_token_link(req, wf):
     ctx = {
         "app_name": app_name,
         "app_url": f"{base_url}/",
-        "recipient_name": _display_from_email(req.target_email),
+        "recipient_name": req.target_email.split("@")[0],
         "workflow_label": wf.label,
         "token_url": f"{base_url}/workflow/token/{req.token}",
     }
@@ -1055,7 +1054,6 @@ async def _handle_ad_account_creation(
 
     from not_dot_net.backend.mail import send_mail
     from not_dot_net.backend.email_templates import render_email
-    from not_dot_net.backend.notifications import _display_from_email
     from not_dot_net.config import org_config as _org_config
     contact_email = (request.target_email or "").strip()
     if contact_email:
@@ -1069,7 +1067,7 @@ async def _handle_ad_account_creation(
         ctx = {
             "app_name": _app_name,
             "app_url": f"{_base_url}/",
-            "recipient_name": _display_from_email(contact_email),
+            "recipient_name": display_name,
             "workflow_label": workflow_label,
             "sam": sam,
             "display_name": display_name,

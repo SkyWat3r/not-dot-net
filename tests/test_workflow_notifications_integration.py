@@ -1,7 +1,7 @@
 import pytest
 import uuid
 from unittest.mock import patch, AsyncMock
-from not_dot_net.backend.workflow_service import create_request, submit_step
+from not_dot_net.backend.workflow_service import create_request, submit_step, _send_token_link
 from not_dot_net.backend.roles import RoleDefinition, roles_config
 from not_dot_net.backend.db import User, get_async_session
 from not_dot_net.config import OrgConfig, org_config
@@ -215,3 +215,21 @@ async def test_onboarding_complete_notification_does_not_include_token_link(monk
     assert req.status == "completed"
     assert sent_emails
     assert all("/workflow/token/" not in body for _, _, body in sent_emails)
+
+
+@pytest.mark.asyncio
+async def test_send_token_link_body_has_token_url():
+    class Req: id = "r1"; target_email = "newcomer@lpp.fr"; token = "tok-1"
+    class Wf: label = "Onboarding"
+    captured = {}
+
+    async def fake_send(to, subject, body):
+        captured["to"], captured["subject"], captured["body"] = to, subject, body
+
+    with patch("not_dot_net.backend.mail.send_mail", new=fake_send), \
+         patch("not_dot_net.config.org_config.get", new=AsyncMock(
+             return_value=type("O", (), {"base_url": "http://x", "app_name": "LPP"})())):
+        await _send_token_link(Req(), Wf())
+
+    assert captured["to"] == "newcomer@lpp.fr"
+    assert "http://x/workflow/token/tok-1" in captured["body"]
