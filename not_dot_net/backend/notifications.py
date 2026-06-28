@@ -3,77 +3,8 @@
 from not_dot_net.config import WorkflowConfig, NotificationRuleConfig
 
 
-# --- Email Templates ---
-
-TEMPLATES = {
-    "submit": {
-        "subject": "A new {workflow_label} request needs your attention",
-        "body": "<p>A new <strong>{workflow_label}</strong> request has been submitted"
-                " and requires your action.</p>",
-    },
-    "approve": {
-        "subject": "Your {workflow_label} request has been approved",
-        "body": "<p>Your <strong>{workflow_label}</strong> request has been approved.</p>",
-    },
-    "reject": {
-        "subject": "Your {workflow_label} request was rejected",
-        "body": "<p>Your <strong>{workflow_label}</strong> request was rejected.</p>",
-    },
-    "step_assigned": {
-        "subject": "Action required: {step_label} for {workflow_label}",
-        "body": "<p>You have a pending action on <strong>{workflow_label}</strong>: "
-                "{step_label}.</p>",
-    },
-    "token_link": {
-        "subject": "Please complete your information for {workflow_label}",
-        "body": "<p>Please complete your information by visiting the link below:</p>"
-                '<p><a href="{link}">{link}</a></p>',
-    },
-    "request_corrections": {
-        "subject": "Corrections needed for your {workflow_label} submission",
-        "body": "<p>The administration team has requested corrections on your "
-                "<strong>{workflow_label}</strong> submission.</p>"
-                "<p>Please visit the link you received previously to update your information.</p>",
-    },
-    "corrections_with_link": {
-        "subject": "Corrections needed for your {workflow_label} submission",
-        "body": "<p>The administration team has requested corrections on your "
-                "<strong>{workflow_label}</strong> submission.</p>"
-                '<p>Please visit the following link to update your information:</p>'
-                '<p><a href="{link}">{link}</a></p>',
-    },
-    "complete": {
-        "subject": "Your {workflow_label} is complete — welcome!",
-        "body": "<p>Your <strong>{workflow_label}</strong> onboarding is now complete. "
-                "Your account has been created.</p>",
-    },
-    # The initial password is deliberately NOT in this email — the operator
-    # hands it over via the one-time copy dialog. Emailing it would also
-    # persist it in the mail_outbox table.
-    "account_created": {
-        "subject": "{workflow_label}: your AD account is ready",
-        "body": (
-            "<p>Hello {display_name},</p>"
-            "<p>Your account has been created:</p>"
-            "<ul>"
-            "<li><strong>Login:</strong> {sam}</li>"
-            "<li><strong>Email:</strong> {mail}</li>"
-            "</ul>"
-            "<p>Your administrator will give you your initial password; "
-            "you will be asked to change it on first login.</p>"
-        ),
-    },
-}
-
-
-def render_email(event: str, workflow_label: str, **kwargs) -> tuple[str, str]:
-    """Render an email template. Returns (subject, body_html)."""
-    template = TEMPLATES.get(event)
-    if template is None:
-        raise ValueError(f"No email template for event: {event}")
-    subject = template["subject"].format(workflow_label=workflow_label, **kwargs)
-    body = template["body"].format(workflow_label=workflow_label, **kwargs)
-    return subject, body
+def _display_from_email(email: str) -> str:
+    return (email or "").split("@")[0]
 
 
 def _matching_rules(
@@ -131,10 +62,12 @@ async def notify(
 ) -> list[str]:
     """Fire notifications for a workflow event. Returns list of emails sent to."""
     from not_dot_net.backend.mail import send_mail
+    from not_dot_net.backend.email_templates import render_email
     from not_dot_net.config import org_config
 
     org_cfg = await org_config.get()
     base_url = org_cfg.base_url.rstrip("/")
+    app_name = (org_cfg.app_name or "not-dot-net").strip() or "not-dot-net"
 
     rules = _matching_rules(workflow, event, step_key)
     if not rules:
@@ -145,17 +78,22 @@ async def notify(
         recipients = await resolve_recipients(
             rule.notify, request, get_user_email, get_users_by_role, get_users_by_permission,
         )
-
-        # Determine template
         template_key = event
-        kwargs = {}
+        base_ctx = {
+            "app_name": app_name,
+            "app_url": f"{base_url}/",
+            "workflow_label": workflow.label,
+            "request_url": f"{base_url}/workflow/request/{request.id}",
+            "step_label": step_key,
+            "requester_name": "",
+        }
         if request.token and event in ("submit", "request_corrections"):
             template_key = "token_link" if event == "submit" else "corrections_with_link"
-            kwargs["link"] = f"{base_url}/workflow/token/{request.token}"
-
-        subject, body = render_email(template_key, workflow.label, **kwargs)
+            base_ctx["token_url"] = f"{base_url}/workflow/token/{request.token}"
 
         for email in recipients:
+            ctx = {**base_ctx, "recipient_name": _display_from_email(email)}
+            subject, body = await render_email(template_key, ctx)
             await send_mail(email, subject, body)
             all_sent.append(email)
 

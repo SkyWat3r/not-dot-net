@@ -91,13 +91,12 @@ async def test_onboarding_submit_sends_target_token_link_email():
         req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
 
     assert req.token is not None
-    assert sent_emails == [
-        (
-            "newcomer-token@test.com",
-            "Please complete your information for Onboarding",
-            f'<p>Please complete your information by visiting the link below:</p><p><a href="https://intranet.example.test/workflow/token/{req.token}">https://intranet.example.test/workflow/token/{req.token}</a></p>',
-        )
-    ]
+    assert len(sent_emails) == 1
+    to, subject, body = sent_emails[0]
+    assert to == "newcomer-token@test.com"
+    assert subject == "Please complete your information for Onboarding"
+    assert f"https://intranet.example.test/workflow/token/{req.token}" in body
+    assert "https://intranet.example.test//workflow" not in body
 
 
 async def test_onboarding_request_corrections_sends_fresh_token_link_email():

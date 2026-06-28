@@ -1,13 +1,17 @@
 import pytest
 import uuid
 from unittest.mock import AsyncMock, patch
-from not_dot_net.backend.notifications import notify, resolve_recipients, render_email
+from not_dot_net.backend.notifications import notify, resolve_recipients, _display_from_email
 from not_dot_net.config import (
     WorkflowConfig,
     WorkflowStepConfig,
     NotificationRuleConfig,
     FieldConfig,
 )
+
+
+async def _async_none():
+    return None
 
 
 # --- Fixtures ---
@@ -156,38 +160,56 @@ async def test_resolve_permission_target_without_handler_does_not_fall_back_to_r
     get_users_by_role.assert_not_awaited()
 
 
-# --- Tests: email rendering ---
+# --- Tests: _display_from_email and deep links ---
 
-def test_render_submit_email():
-    subject, body = render_email("submit", "VPN Access Request", step_label="Request")
-    assert "VPN Access Request" in subject
-    assert "VPN Access Request" in body
-
-
-def test_render_approve_email():
-    subject, body = render_email("approve", "VPN Access Request")
-    assert "approved" in subject.lower()
+def test_display_from_email_uses_local_part():
+    assert _display_from_email("marie.curie@lpp.fr") == "marie.curie"
+    assert _display_from_email("") == ""
 
 
-def test_render_reject_email():
-    subject, body = render_email("reject", "VPN Access Request")
-    assert "rejected" in subject.lower()
+@pytest.mark.asyncio
+async def test_notify_submit_includes_request_deeplink():
+    req = FakeRequest(token=None, id="req-1")
+    sent_bodies = []
+
+    async def fake_send(to, subject, body):
+        sent_bodies.append((to, subject, body))
+
+    async def email_for(uid):
+        return None
+
+    async def users_by_role(role):
+        class U: ...
+        u = U(); u.email = "director@lpp.fr"; return [u]
+
+    with patch("not_dot_net.backend.mail.send_mail", new=fake_send), \
+         patch("not_dot_net.config.org_config.get", new=AsyncMock(
+             return_value=type("O", (), {"base_url": "http://x", "app_name": "LPP"})())):
+        await notify(req, "submit", "request", VPN_WORKFLOW, email_for, users_by_role)
+
+    assert sent_bodies, "an email should be sent"
+    _, _, body = sent_bodies[0]
+    assert "http://x/workflow/request/req-1" in body
 
 
-def test_render_token_link_email():
-    subject, body = render_email("token_link", "Onboarding", link="http://localhost/workflow/token/abc123")
-    assert "http://localhost/workflow/token/abc123" in body
+@pytest.mark.asyncio
+async def test_notify_submit_with_token_uses_token_link_deeplink():
+    req = FakeRequest(token="tok-9", id="req-2")
+    sent = []
 
+    async def fake_send(to, s, b):
+        sent.append(b)
 
-def test_render_complete_email():
-    subject, body = render_email("complete", "Onboarding")
-    assert "complete" in subject.lower()
-    assert "account has been created" in body
+    async def users_by_role(role):
+        class U: ...
+        u = U(); u.email = "n@lpp.fr"; return [u]
 
+    with patch("not_dot_net.backend.mail.send_mail", new=fake_send), \
+         patch("not_dot_net.config.org_config.get", new=AsyncMock(
+             return_value=type("O", (), {"base_url": "http://x", "app_name": "LPP"})())):
+        await notify(req, "submit", "request", VPN_WORKFLOW, AsyncMock(), users_by_role)
 
-def test_render_unknown_event_raises():
-    with pytest.raises(ValueError, match="No email template"):
-        render_email("unknown_event", "Test Workflow")
+    assert any("http://x/workflow/token/tok-9" in b for b in sent)
 
 
 # --- Tests: full notify pipeline ---
@@ -377,14 +399,23 @@ async def test_request_corrections_includes_token_link():
     assert "visit the link you received previously" not in body
 
 
-def test_account_created_email_contains_no_password():
+@pytest.mark.asyncio
+async def test_account_created_email_contains_no_password():
     """R-08: the temp password is handed over by the operator via the copy
     dialog — it must never be emailed (and thus persisted in mail_outbox)."""
-    from not_dot_net.backend.notifications import render_email
+    from not_dot_net.backend.email_templates import render_email
 
-    subject, body = render_email(
-        "account_created", "Onboarding",
-        sam="doej", display_name="Jane Doe", mail="jane@lpp.fr",
+    subject, body = await render_email(
+        "account_created",
+        {
+            "workflow_label": "Onboarding",
+            "sam": "doej",
+            "display_name": "Jane Doe",
+            "mail": "jane@lpp.fr",
+            "app_name": "LPP",
+            "app_url": "http://x/",
+            "recipient_name": "Jane Doe",
+        },
     )
     assert "doej" in body
     assert "{initial_password}" not in body

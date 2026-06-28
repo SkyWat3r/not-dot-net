@@ -181,15 +181,23 @@ workflows_config = section("workflows", WorkflowsConfig, label="Workflows")
 async def _send_token_link(req, wf):
     """Send the token link email directly to the target person."""
     from not_dot_net.backend.mail import send_mail
-    from not_dot_net.backend.notifications import render_email
+    from not_dot_net.backend.email_templates import render_email
+    from not_dot_net.backend.notifications import _display_from_email
     from not_dot_net.config import org_config
 
     if not req.target_email or not req.token:
         return
     org_cfg = await org_config.get()
     base_url = org_cfg.base_url.rstrip("/")
-    link = f"{base_url}/workflow/token/{req.token}"
-    subject, body = render_email("token_link", wf.label, link=link)
+    app_name = (org_cfg.app_name or "not-dot-net").strip() or "not-dot-net"
+    ctx = {
+        "app_name": app_name,
+        "app_url": f"{base_url}/",
+        "recipient_name": _display_from_email(req.target_email),
+        "workflow_label": wf.label,
+        "token_url": f"{base_url}/workflow/token/{req.token}",
+    }
+    subject, body = await render_email("token_link", ctx)
     await send_mail(req.target_email, subject, body)
 
 
@@ -1046,19 +1054,28 @@ async def _handle_ad_account_creation(
         )
 
     from not_dot_net.backend.mail import send_mail
-    from not_dot_net.backend.notifications import render_email
+    from not_dot_net.backend.email_templates import render_email
+    from not_dot_net.backend.notifications import _display_from_email
+    from not_dot_net.config import org_config as _org_config
     contact_email = (request.target_email or "").strip()
     if contact_email:
         # Look up the workflow label for the email subject.
         wf_cfg = await workflows_config.get()
         wf = wf_cfg.workflows.get(request.type)
         workflow_label = (wf.label if wf else request.type) or "Workflow"
-
-        subject, body = render_email(
-            "account_created",
-            workflow_label=workflow_label,
-            sam=sam, display_name=display_name, mail=new_user.mail,
-        )
+        _org_cfg = await _org_config.get()
+        _base_url = _org_cfg.base_url.rstrip("/")
+        _app_name = (_org_cfg.app_name or "not-dot-net").strip() or "not-dot-net"
+        ctx = {
+            "app_name": _app_name,
+            "app_url": f"{_base_url}/",
+            "recipient_name": _display_from_email(contact_email),
+            "workflow_label": workflow_label,
+            "sam": sam,
+            "display_name": display_name,
+            "mail": new_user.mail,
+        }
+        subject, body = await render_email("account_created", ctx)
         await send_mail(contact_email, subject, body)
 
     return AdAccountCreationResult(
