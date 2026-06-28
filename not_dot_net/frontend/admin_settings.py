@@ -74,7 +74,7 @@ async def render(user):
     registry = get_registry()
 
     for prefix, cfg_section in sorted(registry.items()):
-        if prefix in ("vocabularies", "field_definitions"):
+        if prefix in ("vocabularies", "field_definitions", "mail_templates"):
             continue
         current = await cfg_section.get()
         schema = cfg_section.schema
