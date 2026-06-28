@@ -39,6 +39,7 @@ def setup():
     @ui.page("/")
     async def main_page(
         user: Optional[User] = Depends(current_active_user_optional),
+        tab: Optional[str] = None,
     ):
         logged_in = user is not None
         effective_user = user or GuestUser()
@@ -67,8 +68,25 @@ def setup():
             available_tabs.append(ad_accounts_label)
         if is_superuser:
             available_tabs.append(users_label)
+        tab_keys = {
+            "dashboard": dashboard_label,
+            "people": people_label,
+            "bookings": bookings_label,
+            "pages": pages_label,
+            "new_request": new_request_label,
+            "audit": audit_label,
+            "settings": settings_label,
+            "ad_accounts": ad_accounts_label,
+            "users": users_label,
+        }
+        requested_tab = tab_keys.get(tab or "")
         saved_tab = app.storage.user.get("active_tab")
-        initial_tab = saved_tab if saved_tab in available_tabs else dashboard_label
+        if requested_tab in available_tabs:
+            initial_tab = requested_tab
+        elif saved_tab in available_tabs:
+            initial_tab = saved_tab
+        else:
+            initial_tab = dashboard_label
 
         refreshers: dict[str, Callable[[], Awaitable[None]]] = {}
         refreshing: set[str] = set()
