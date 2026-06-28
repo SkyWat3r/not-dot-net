@@ -75,6 +75,15 @@ async def test_new_default_key_works_with_old_saved_config():
     assert "rejected" in subject.lower()
 
 
+def test_render_does_not_html_escape_subject():
+    from not_dot_net.backend.email_templates import EmailTemplate, _render, DEFAULT_LAYOUT
+    tmpl = EmailTemplate(subject="[{{ app_name }}] {{ resource_name }}", body="<p>x</p>")
+    ctx = {"app_name": "LPP", "app_url": "http://x/", "recipient_name": "A",
+           "resource_name": "R&D <v1>"}
+    subject, _ = _render(tmpl, DEFAULT_LAYOUT, ctx)
+    assert subject == "[LPP] R&D <v1>"          # plain text, not &amp;/&lt;
+
+
 @pytest.mark.asyncio
 async def test_broken_override_falls_back_to_default(caplog):
     await mail_templates_config.set(MailTemplatesConfig(

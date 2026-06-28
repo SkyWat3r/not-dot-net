@@ -203,17 +203,17 @@ async def _out_of_service_recipients(session) -> list[User]:
     return [u for u in users if u.is_superuser or await has_permissions(u, MANAGE_BOOKINGS)]
 
 
-async def _booking_email_env() -> tuple[str, str]:
+async def _booking_email_env() -> tuple[str, str, str]:
     cfg = await org_config.get()
     app_name = (cfg.app_name or "not-dot-net").strip() or "not-dot-net"
     base_url = cfg.base_url.rstrip("/")
-    return app_name, f"{base_url}/?tab=bookings"
+    return app_name, f"{base_url}/?tab=bookings", f"{base_url}/"
 
 
 async def _notify_status_change(resource: Resource, new_status: ResourceStatus,
                                 today: date) -> None:
     from not_dot_net.backend.email_templates import render_email
-    app_name, bookings_url = await _booking_email_env()
+    app_name, bookings_url, app_url = await _booking_email_env()
     async with session_scope() as session:
         booking_user = await _current_booking_user(session, resource.id, today)
 
@@ -225,7 +225,7 @@ async def _notify_status_change(resource: Resource, new_status: ResourceStatus,
                                            subject_line=subject_line, headline=headline,
                                            bookings_url=bookings_url)
             ctx["app_name"] = app_name
-            ctx["app_url"] = bookings_url.split("/?")[0] + "/"
+            ctx["app_url"] = app_url
             subject, body = await render_email("resource_status", ctx)
             await send_mail(booking_user.email, subject, body)
             return
@@ -244,7 +244,7 @@ async def _notify_status_change(resource: Resource, new_status: ResourceStatus,
                                                subject_line="", headline=headline,
                                                bookings_url=bookings_url)
                 ctx["app_name"] = app_name
-                ctx["app_url"] = bookings_url.split("/?")[0] + "/"
+                ctx["app_url"] = app_url
                 subject, body = await render_email("resource_out_of_service", ctx)
                 await send_mail(u.email, subject, body)
 
@@ -471,6 +471,8 @@ async def send_booking_end_reminders(today: date | None = None) -> int:
         )
         rows = list(result.all())
 
+        from not_dot_net.backend.email_templates import render_email
+        app_name, bookings_url, app_url = await _booking_email_env()
         for booking, user, resource in rows:
             days_until_end = (booking_last_day(booking.end_date) - today).days
             if days_until_end < 0:
@@ -484,13 +486,11 @@ async def send_booking_end_reminders(today: date | None = None) -> int:
             ]
             if not due_leads:
                 continue
-            from not_dot_net.backend.email_templates import render_email
-            app_name, bookings_url = await _booking_email_env()
             delay_label = _booking_reminder_delay_label(days_until_end)
             ctx = _booking_reminder_context(user=user, booking=booking, resource=resource,
                                             delay_label=delay_label, bookings_url=bookings_url)
             ctx["app_name"] = app_name
-            ctx["app_url"] = bookings_url.split("/?")[0] + "/"
+            ctx["app_url"] = app_url
             subject, body = await render_email("booking_reminder", ctx)
             await send_mail(user.email, subject, body)
             sent_lead_days.update(due_leads)

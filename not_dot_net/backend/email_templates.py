@@ -218,10 +218,11 @@ class MailTemplatesConfig(BaseModel):
 mail_templates_config = section("mail_templates", MailTemplatesConfig, label="Email Templates")
 
 _env = SandboxedEnvironment(autoescape=True)
+_subject_env = SandboxedEnvironment(autoescape=False)
 
 
 def _render(template: EmailTemplate, layout: str, context: dict) -> tuple[str, str]:
-    subject = _env.from_string(template.subject).render(**context)
+    subject = _subject_env.from_string(template.subject).render(**context)
     inner = _env.from_string(template.body).render(**context)
     body_html = _env.from_string(layout).render(content=Markup(inner), **context)
     return subject, body_html
