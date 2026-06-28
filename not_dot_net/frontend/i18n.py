@@ -514,6 +514,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "step_key_hint": "Renaming the key of a live workflow can strand in-progress requests on the old key.",
         "visible_when_checkbox": "Checkbox",
         "visible_when_value": "Value",
+        # Email templates editor
+        "email_templates": "Email Templates",
+        "email_templates_help": "Customize the emails the intranet sends. Defaults are used until you override them.",
+        "email_layout": "Base layout",
+        "email_layout_help": "Shared HTML wrapper around every email body. Use {{ content }} where the message goes.",
+        "available_variables": "Available variables",
+        "subject": "Subject",
+        "preview": "Preview",
+        "reset_to_default": "Reset to default",
+        "reset_done": "Reset to default",
     },
     "fr": {
         # Shell / nav
@@ -1024,6 +1034,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "step_key_hint": "Renommer la clé d'un processus actif peut bloquer les demandes en cours sur l'ancienne clé.",
         "visible_when_checkbox": "Case à cocher",
         "visible_when_value": "Valeur",
+        # Email templates editor
+        "email_templates": "Modèles d'e-mail",
+        "email_templates_help": "Personnalisez les e-mails envoyés par l'intranet. Les modèles par défaut sont utilisés tant que vous ne les remplacez pas.",
+        "email_layout": "Mise en page de base",
+        "email_layout_help": "Encadré HTML partagé autour de chaque e-mail. Placez {{ content }} là où le message doit apparaître.",
+        "available_variables": "Variables disponibles",
+        "subject": "Objet",
+        "preview": "Aperçu",
+        "reset_to_default": "Réinitialiser",
+        "reset_done": "Réinitialisé",
     },
 }
 

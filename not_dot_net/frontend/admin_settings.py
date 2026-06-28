@@ -13,6 +13,7 @@ from not_dot_net.backend.app_config import get_registry
 from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.data_io import export_all, import_all
 from not_dot_net.backend.personnel_import import import_personnel, parse_clean_csv_text
+from not_dot_net.frontend.admin_email_templates import render as render_email_templates
 from not_dot_net.frontend.admin_roles import render as render_roles
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.field_definitions_editor import render as render_field_definitions
@@ -66,6 +67,9 @@ async def render(user):
 
     with ui.expansion(t("field_definitions"), icon="dynamic_form").classes("w-full"):
         await render_field_definitions(user)
+
+    with ui.expansion(t("email_templates"), icon="mail").classes("w-full"):
+        await render_email_templates(user)
 
     registry = get_registry()
 
