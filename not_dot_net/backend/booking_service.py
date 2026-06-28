@@ -3,7 +3,6 @@
 import logging
 import uuid
 from datetime import date, timedelta
-from html import escape
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -171,16 +170,15 @@ _STATUS_NOTICE: dict[ResourceStatus, tuple[str, str]] = {
 }
 
 
-def render_resource_status_body(*, user: User, resource: Resource, headline: str) -> str:
-    display_name = user.full_name or user.email
-    return (
-        f"<p>Hello {escape(display_name)},</p>"
-        f"<p>{escape(headline)}</p>"
-        "<table>"
-        f"<tr><td><strong>Resource</strong></td><td>{escape(resource.name)}</td></tr>"
-        f"<tr><td><strong>Location</strong></td><td>{escape(resource.location or '-')}</td></tr>"
-        "</table>"
-    )
+def _resource_status_context(*, user, resource, subject_line, headline, bookings_url) -> dict:
+    return {
+        "recipient_name": user.full_name or user.email,
+        "subject_line": subject_line,
+        "headline": headline,
+        "resource_name": resource.name,
+        "location": resource.location or "-",
+        "bookings_url": bookings_url,
+    }
 
 
 async def _current_booking_user(session, resource_id: uuid.UUID, today: date) -> User | None:
@@ -205,22 +203,31 @@ async def _out_of_service_recipients(session) -> list[User]:
     return [u for u in users if u.is_superuser or await has_permissions(u, MANAGE_BOOKINGS)]
 
 
-async def _notify_status_change(resource: Resource, new_status: ResourceStatus,
-                                today: date) -> None:
+async def _booking_email_env() -> tuple[str, str]:
     cfg = await org_config.get()
     app_name = (cfg.app_name or "not-dot-net").strip() or "not-dot-net"
+    base_url = cfg.base_url.rstrip("/")
+    return app_name, f"{base_url}/?tab=bookings"
+
+
+async def _notify_status_change(resource: Resource, new_status: ResourceStatus,
+                                today: date) -> None:
+    from not_dot_net.backend.email_templates import render_email
+    app_name, bookings_url = await _booking_email_env()
     async with session_scope() as session:
         booking_user = await _current_booking_user(session, resource.id, today)
 
         if new_status in _STATUS_NOTICE:
             if booking_user is None or not booking_user.email:
                 return
-            subject, headline = _STATUS_NOTICE[new_status]
-            await send_mail(
-                booking_user.email,
-                f"[{app_name}] {subject}",
-                render_resource_status_body(user=booking_user, resource=resource, headline=headline),
-            )
+            subject_line, headline = _STATUS_NOTICE[new_status]
+            ctx = _resource_status_context(user=booking_user, resource=resource,
+                                           subject_line=subject_line, headline=headline,
+                                           bookings_url=bookings_url)
+            ctx["app_name"] = app_name
+            ctx["app_url"] = bookings_url.split("/?")[0] + "/"
+            subject, body = await render_email("resource_status", ctx)
+            await send_mail(booking_user.email, subject, body)
             return
 
         if new_status is ResourceStatus.OUT_OF_SERVICE:
@@ -233,11 +240,13 @@ async def _notify_status_change(resource: Resource, new_status: ResourceStatus,
                 if not u.email or u.email in seen:
                     continue
                 seen.add(u.email)
-                await send_mail(
-                    u.email,
-                    f"[{app_name}] Resource out of service: {resource.name}",
-                    render_resource_status_body(user=u, resource=resource, headline=headline),
-                )
+                ctx = _resource_status_context(user=u, resource=resource,
+                                               subject_line="", headline=headline,
+                                               bookings_url=bookings_url)
+                ctx["app_name"] = app_name
+                ctx["app_url"] = bookings_url.split("/?")[0] + "/"
+                subject, body = await render_email("resource_out_of_service", ctx)
+                await send_mail(u.email, subject, body)
 
 
 async def set_resource_status(resource_id: uuid.UUID, new_status, actor=None,
@@ -418,32 +427,17 @@ def _booking_reminder_delay_label(days_until_end: int) -> str:
     return f"in {days_until_end} days"
 
 
-async def _booking_reminder_subject(days_until_end: int) -> str:
-    cfg = await org_config.get()
-    app_name = (cfg.app_name or "not-dot-net").strip() or "not-dot-net"
-    return f"[{app_name}] Your booking ends {_booking_reminder_delay_label(days_until_end)}"
-
-
-def render_booking_reminder_body(
-    *,
-    user: User,
-    booking: Booking,
-    resource: Resource,
-) -> str:
-    display_name = user.full_name or user.email
-    software = ", ".join(booking.software_tags or []) or "-"
-    return (
-        f"<p>Hello {escape(display_name)},</p>"
-        "<p>Your booking is ending soon.</p>"
-        "<table>"
-        f"<tr><td><strong>Resource</strong></td><td>{escape(resource.name)}</td></tr>"
-        f"<tr><td><strong>Start date</strong></td><td>{booking.start_date}</td></tr>"
-        f"<tr><td><strong>End date</strong></td><td>{booking_last_day(booking.end_date)}</td></tr>"
-        f"<tr><td><strong>OS</strong></td><td>{escape(booking.os_choice or '-')}</td></tr>"
-        f"<tr><td><strong>Software</strong></td><td>{escape(software)}</td></tr>"
-        "</table>"
-        "<p>Please prepare to return or release the resource at the end of your booking.</p>"
-    )
+def _booking_reminder_context(*, user, booking, resource, delay_label, bookings_url) -> dict:
+    return {
+        "recipient_name": user.full_name or user.email,
+        "delay_label": delay_label,
+        "resource_name": resource.name,
+        "start_date": str(booking.start_date),
+        "end_date": str(booking_last_day(booking.end_date)),
+        "os": booking.os_choice or "-",
+        "software": ", ".join(booking.software_tags or []) or "-",
+        "bookings_url": bookings_url,
+    }
 
 
 async def send_booking_end_reminders(today: date | None = None) -> int:
@@ -490,11 +484,15 @@ async def send_booking_end_reminders(today: date | None = None) -> int:
             ]
             if not due_leads:
                 continue
-            await send_mail(
-                user.email,
-                await _booking_reminder_subject(days_until_end),
-                render_booking_reminder_body(user=user, booking=booking, resource=resource),
-            )
+            from not_dot_net.backend.email_templates import render_email
+            app_name, bookings_url = await _booking_email_env()
+            delay_label = _booking_reminder_delay_label(days_until_end)
+            ctx = _booking_reminder_context(user=user, booking=booking, resource=resource,
+                                            delay_label=delay_label, bookings_url=bookings_url)
+            ctx["app_name"] = app_name
+            ctx["app_url"] = bookings_url.split("/?")[0] + "/"
+            subject, body = await render_email("booking_reminder", ctx)
+            await send_mail(user.email, subject, body)
             sent_lead_days.update(due_leads)
             booking.reminder_sent_lead_days = sorted(sent_lead_days)
             await session.commit()

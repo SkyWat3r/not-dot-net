@@ -6,8 +6,9 @@ from sqlalchemy import select
 
 from not_dot_net.backend.booking_models import Booking, Resource
 from not_dot_net.backend.booking_service import (
+    _booking_reminder_context,
     _booking_reminder_delay_label,
-    render_booking_reminder_body,
+    _resource_status_context,
     send_booking_end_reminders,
 )
 from not_dot_net.backend.db import User, session_scope
@@ -55,29 +56,19 @@ async def _create_booking(user, resource, *, end_offset_days: int) -> Booking:
         return booking
 
 
-def test_render_booking_reminder_body_escapes_user_content():
-    user = User(
-        id=uuid.uuid4(),
-        email="x@test.com",
-        hashed_password="x",
-        full_name="<script>",
-    )
-    resource = Resource(name="<PC>", resource_type="desktop")
-    booking = Booking(
-        user_id=user.id,
-        resource_id=resource.id,
-        start_date=date(2026, 5, 20),
-        end_date=date(2026, 5, 27),
-        os_choice="<Ubuntu>",
-        software_tags=["A&B"],
-    )
-
-    body = render_booking_reminder_body(user=user, booking=booking, resource=resource)
-
-    assert "&lt;script&gt;" in body
-    assert "&lt;PC&gt;" in body
-    assert "&lt;Ubuntu&gt;" in body
-    assert "A&amp;B" in body
+def test_booking_reminder_context_raw_values_no_pre_escape():
+    """Context builder stores raw strings; Jinja autoescape handles HTML safety at render."""
+    class U: full_name = "<script>"; email = "x@test.com"
+    class B: start_date = date(2026, 5, 20); end_date = date(2026, 5, 27); \
+             os_choice = "<Ubuntu>"; software_tags = ["A&B"]
+    class R: name = "<PC>"
+    ctx = _booking_reminder_context(user=U(), booking=B(), resource=R(),
+                                    delay_label="today",
+                                    bookings_url="http://x/?tab=bookings")
+    assert ctx["recipient_name"] == "<script>"
+    assert ctx["resource_name"] == "<PC>"
+    assert ctx["os"] == "<Ubuntu>"
+    assert ctx["software"] == "A&B"
 
 
 def test_booking_reminder_delay_label():
@@ -264,15 +255,39 @@ async def test_no_reminder_once_last_usage_day_has_passed():
     send.assert_not_awaited()
 
 
-def test_render_booking_reminder_body_shows_inclusive_last_day():
-    user = User(id=uuid.uuid4(), email="x@test.com", hashed_password="x", full_name="X")
-    resource = Resource(name="PC", resource_type="desktop")
-    booking = Booking(
-        user_id=user.id, resource_id=resource.id,
-        start_date=date(2026, 5, 20), end_date=date(2026, 5, 28),
-    )
+def test_booking_reminder_context_shows_inclusive_last_day():
+    class U: full_name = "X"; email = "x@test.com"
+    class R: name = "PC"
+    class B: start_date = date(2026, 5, 20); end_date = date(2026, 5, 28); \
+             os_choice = None; software_tags = None
+    ctx = _booking_reminder_context(user=U(), booking=B(), resource=R(),
+                                    delay_label="today",
+                                    bookings_url="http://x/?tab=bookings")
+    assert ctx["end_date"] == "2026-05-27"   # last usage day (exclusive end - 1)
+    assert ctx["start_date"] == "2026-05-20"
 
-    body = render_booking_reminder_body(user=user, booking=booking, resource=resource)
 
-    assert "2026-05-27" in body      # last usage day
-    assert "2026-05-28" not in body  # exclusive hand-back day never shown
+def test_booking_reminder_context_shape():
+    class U: full_name = "Marie Curie"; email = "m@lpp.fr"
+    class B: start_date = "2026-07-01"; end_date = date(2026, 7, 10); os_choice = "Ubuntu"; \
+             software_tags = ["Python", "MATLAB"]
+    class R: name = "Laptop-07"
+    ctx = _booking_reminder_context(user=U(), booking=B(), resource=R(),
+                                    delay_label="in 3 days",
+                                    bookings_url="http://x/?tab=bookings")
+    assert ctx["recipient_name"] == "Marie Curie"
+    assert ctx["resource_name"] == "Laptop-07"
+    assert ctx["software"] == "Python, MATLAB"
+    assert ctx["delay_label"] == "in 3 days"
+    assert ctx["bookings_url"] == "http://x/?tab=bookings"
+
+
+def test_resource_status_context_defaults_blank_location():
+    class U: full_name = ""; email = "m@lpp.fr"
+    class R: name = "Laptop-07"; location = None
+    ctx = _resource_status_context(user=U(), resource=R(),
+                                   subject_line="Ready", headline="It is ready.",
+                                   bookings_url="http://x/?tab=bookings")
+    assert ctx["recipient_name"] == "m@lpp.fr"   # falls back to email
+    assert ctx["location"] == "-"
+    assert ctx["subject_line"] == "Ready"
