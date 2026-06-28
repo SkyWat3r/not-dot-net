@@ -225,3 +225,20 @@ def _render(template: EmailTemplate, layout: str, context: dict) -> tuple[str, s
     inner = _env.from_string(template.body).render(**context)
     body_html = _env.from_string(layout).render(content=Markup(inner), **context)
     return subject, body_html
+
+
+async def get_template(key: str) -> EmailTemplate:
+    cfg = await mail_templates_config.get()
+    return cfg.overrides.get(key) or DEFAULT_TEMPLATES[key]
+
+
+async def render_email(key: str, context: dict) -> tuple[str, str]:
+    cfg = await mail_templates_config.get()
+    template = cfg.overrides.get(key) or DEFAULT_TEMPLATES[key]
+    layout = cfg.layout or DEFAULT_LAYOUT
+    try:
+        return _render(template, layout, context)
+    except TemplateError:
+        logger.warning("Email template %r failed to render; using default", key,
+                       exc_info=True)
+        return _render(DEFAULT_TEMPLATES[key], DEFAULT_LAYOUT, context)

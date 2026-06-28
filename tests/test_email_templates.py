@@ -1,5 +1,7 @@
+import pytest
 from not_dot_net.backend.email_templates import (
     EmailTemplate, DEFAULT_LAYOUT, DEFAULT_TEMPLATES, EMAIL_EVENTS, _render,
+    get_template, render_email, mail_templates_config, MailTemplatesConfig,
 )
 
 
@@ -42,3 +44,42 @@ def test_default_templates_render_with_their_sample_context():
         subject, body = _render(DEFAULT_TEMPLATES[ev.key], DEFAULT_LAYOUT, ctx)
         assert subject.strip()
         assert body.strip()
+
+
+BASE_CTX = {"app_name": "LPP", "app_url": "http://x/", "recipient_name": "A",
+            "workflow_label": "VPN", "request_url": "http://x/workflow/request/1"}
+
+
+@pytest.mark.asyncio
+async def test_get_template_falls_back_to_default():
+    tmpl = await get_template("approve")
+    assert tmpl.subject == DEFAULT_TEMPLATES["approve"].subject
+
+
+@pytest.mark.asyncio
+async def test_override_wins_over_default():
+    await mail_templates_config.set(MailTemplatesConfig(
+        overrides={"approve": EmailTemplate(subject="Custom!", body="<p>custom</p>")}))
+    tmpl = await get_template("approve")
+    assert tmpl.subject == "Custom!"
+    subject, body = await render_email("approve", BASE_CTX)
+    assert subject == "Custom!"
+    assert "<p>custom</p>" in body
+
+
+@pytest.mark.asyncio
+async def test_new_default_key_works_with_old_saved_config():
+    # A saved config that predates an event must still render that event.
+    await mail_templates_config.set(MailTemplatesConfig(overrides={}))
+    subject, _ = await render_email("reject", BASE_CTX)
+    assert "rejected" in subject.lower()
+
+
+@pytest.mark.asyncio
+async def test_broken_override_falls_back_to_default(caplog):
+    await mail_templates_config.set(MailTemplatesConfig(
+        overrides={"approve": EmailTemplate(subject="{{ oops", body="<p>x</p>")}))  # bad Jinja
+    subject, _ = await render_email("approve", BASE_CTX)
+    assert subject == DEFAULT_TEMPLATES["approve"].subject.replace(
+        "{{ workflow_label }}", "VPN")  # default rendered, not the broken override
+    assert any("failed to render" in r.message for r in caplog.records)
