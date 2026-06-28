@@ -523,7 +523,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "subject": "Subject",
         "preview": "Preview",
         "reset_to_default": "Reset to default",
-        "reset_done": "Reset to default",
+        "reset_done": "Restored to default",
     },
     "fr": {
         # Shell / nav
