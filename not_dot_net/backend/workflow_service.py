@@ -1,6 +1,7 @@
 """Workflow service layer — DB operations that use the step machine engine."""
 
 import logging
+import os
 import re
 import secrets
 import shutil
@@ -11,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-UPLOAD_ROOT = Path("data/uploads")
+UPLOAD_ROOT = Path(os.environ.get("NDN_DATA_DIR", "data")) / "uploads"
 
 
 # --- AD account creation helpers ---

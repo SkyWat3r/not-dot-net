@@ -21,7 +21,7 @@ ACCESS_PERSONAL_DATA = permission(
     "View and download encrypted personal documents",
 )
 
-ENCRYPTED_DIR = Path("data/encrypted")
+ENCRYPTED_DIR = Path(os.environ.get("NDN_DATA_DIR", "data")) / "encrypted"
 
 
 def _resolve_encrypted_blob_path(storage_path: str) -> Path:
