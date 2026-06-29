@@ -139,20 +139,35 @@ async def _render_field(field_cfg, data, fields, files, on_file_upload, max_uplo
         fields[field_cfg.name] = select
     elif field_cfg.type == "file":
         uploaded = (files or {}).get(field_cfg.name)
+        slot = ui.column().classes(f"{width_class} gap-1")
+
+        def _show_upload(slot=slot, field_cfg=field_cfg, label=label):
+            slot.clear()
+            with slot:
+                req_mark = " *" if field_cfg.required else ""
+                ui.upload(
+                    label=f"{label}{req_mark}",
+                    auto_upload=True,
+                    max_file_size=max_upload_size_mb * 1024 * 1024,
+                    on_upload=lambda e, name=field_cfg.name: on_file_upload(name, e),
+                ).props("outlined flat accept='.pdf,.jpg,.jpeg,.png,.doc,.docx'").classes("w-full")
+
+        def _show_uploaded(fname, slot=slot, label=label):
+            slot.clear()
+            with slot:
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("check_circle", color="positive", size="sm")
+                    ui.label(f"{label}: {fname}").classes("text-positive text-sm")
+                    if on_file_upload:
+                        ui.button(t("replace"), on_click=_show_upload).props("flat dense size=sm")
+
         if uploaded:
-            with ui.row().classes(f"{width_class} items-center gap-2"):
-                ui.icon("check_circle", color="positive", size="sm")
-                ui.label(f"{label}: {uploaded}").classes("text-positive text-sm")
+            _show_uploaded(uploaded)
         elif on_file_upload:
-            req_mark = " *" if field_cfg.required else ""
-            ui.upload(
-                label=f"{label}{req_mark}",
-                auto_upload=True,
-                max_file_size=max_upload_size_mb * 1024 * 1024,
-                on_upload=lambda e, name=field_cfg.name: on_file_upload(name, e),
-            ).props("outlined flat accept='.pdf,.jpg,.jpeg,.png,.doc,.docx'").classes(width_class)
+            _show_upload()
         else:
-            ui.label(f"{label}: no upload available").classes("text-grey text-sm")
+            with slot:
+                ui.label(f"{label}: no upload available").classes("text-grey text-sm")
         fields[field_cfg.name] = None
     elif field_cfg.type == "location":
         nominatim_results: list[dict] = []

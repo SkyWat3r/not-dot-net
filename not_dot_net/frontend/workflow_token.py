@@ -107,7 +107,11 @@ def setup():
                         for doc in instructions:
                             ui.label(f"• {doc}").classes("text-sm")
 
-                uploaded_files: dict[str, str] = {}
+                from not_dot_net.backend.workflow_files import load_files, current_files_by_name
+                _existing = await load_files(request.id, step.key)
+                uploaded_files: dict[str, str] = {
+                    name: f.filename for name, f in current_files_by_name(_existing).items()
+                }
                 resolved = await resolve_step_fields(step)
                 encrypted_fields = {f.name for f in resolved if f.encrypted}
 
