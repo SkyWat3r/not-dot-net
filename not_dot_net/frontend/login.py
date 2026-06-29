@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from nicegui import ui
+from pwdlib.exceptions import UnknownHashError
 from sqlalchemy import func, select
 
 from not_dot_net.backend.audit import (
@@ -52,7 +53,12 @@ async def handle_login(
     credentials = OAuth2PasswordRequestForm(
         username=username, password=password, scope="", grant_type="password",
     )
-    user = await user_manager.authenticate(credentials)
+    try:
+        user = await user_manager.authenticate(credentials)
+    except UnknownHashError:
+        # LDAP-provisioned users carry a sentinel hash pwdlib cannot parse;
+        # treat as a local-auth miss and fall through to LDAP.
+        user = None
 
     # Fallback to LDAP/AD if local auth failed
     if user is None or not user.is_active:
