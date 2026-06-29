@@ -7,10 +7,9 @@ from typing import Optional
 from fastapi import Depends
 from nicegui import app, ui
 
-from not_dot_net.backend.db import User, session_scope
+from not_dot_net.backend.db import User
 from not_dot_net.backend.users import current_active_user_optional
 from not_dot_net.backend.workflow_engine import can_user_act, get_current_step_config
-from not_dot_net.backend.workflow_models import WorkflowFile
 from not_dot_net.backend.workflow_service import (
     cancel_request,
     can_view_request,
@@ -72,8 +71,6 @@ def setup():
         age = compute_step_age_days(events, req.current_step)
         actor_names = await resolve_actor_names([ev.actor_id for ev in events])
 
-        files_by_step = await _load_files(req.id)
-
         ui.colors(primary="#0F52AC")
         with ui.header().classes("row items-center px-4").style(
             "background-color: #0F52AC"
@@ -92,13 +89,18 @@ def setup():
             ui.separator().classes("my-4")
 
             from not_dot_net.backend.field_definitions import field_definitions_config, resolve_step_fields
+            from not_dot_net.backend.workflow_files import load_files
             _defs_cfg = await field_definitions_config.get()
             field_labels = {}
+            field_order: list[tuple[str, str]] = []
             for step in wf.steps:
                 for f in await resolve_step_fields(step, cfg=_defs_cfg):
                     field_labels[f.name] = t(f.label) if f.label else f.name
-            if any(files_by_step.values()):
-                _render_files_section(files_by_step, field_labels, user)
+                    if f.type == "file":
+                        field_order.append((step.key, f.name))
+            all_files = await load_files(req.id)
+            if all_files:
+                _render_files_section(all_files, field_order, field_labels, user)
             _render_timeline(events, actor_names, field_labels)
 
             if step_config and req.status == "in_progress":
@@ -301,22 +303,52 @@ def _render_file_download(f, field_label, user):
         ui.button(f"📎 {f.filename}", on_click=download).props("flat dense size=sm")
 
 
-def _render_files_section(files_by_step, field_labels, user):
-    """All uploaded files for the request, independent of timeline events.
+def _format_ts(dt) -> str:
+    return dt.strftime("%Y-%m-%d %H:%M") if dt is not None else ""
 
-    The token page persists files at upload time — before any submit or
-    save_draft event exists — so the timeline alone can miss them.
+
+def _render_field_group(group, field_labels, user):
+    label = field_labels.get(group.field_name, group.field_name)
+    with ui.row().classes("items-center gap-2"):
+        _render_file_download(group.current, label, user)
+        ui.label(_format_ts(group.current.uploaded_at)).classes("text-xs text-grey")
+    if group.previous:
+        with ui.expansion(
+            t("previous_versions").format(count=len(group.previous))
+        ).classes("w-full"):
+            for f in group.previous:
+                with ui.row().classes("items-center gap-2 ml-4"):
+                    _render_file_download(f, label, user)
+                    ui.label(_format_ts(f.uploaded_at)).classes("text-xs text-grey")
+
+
+def _render_files_section(files, field_order, field_labels, user):
+    """Group uploads per field: current file + collapsible previous versions.
+
+    Files whose (step, field) is no longer in the workflow config fall into a
+    trailing "Other files" group so nothing is hidden.
     """
+    from not_dot_net.backend.workflow_files import group_files_by_field
+
+    groups = {(g.step_key, g.field_name): g for g in group_files_by_field(files)}
     with ui.card().classes("w-full q-pa-md mb-4").style(
         "background: #f8f9fa; border: 1px solid #e0e0e0;"
     ):
         ui.label(t("uploaded_files")).classes(
             "text-xs text-grey uppercase tracking-wide mb-2"
         )
-        for step_files in files_by_step.values():
-            for f in step_files:
-                field_label = field_labels.get(f.field_name, f.field_name)
-                _render_file_download(f, field_label, user)
+        rendered = set()
+        for key in field_order:
+            group = groups.get(key)
+            if group is None:
+                continue
+            _render_field_group(group, field_labels, user)
+            rendered.add(key)
+        orphans = [g for key, g in groups.items() if key not in rendered]
+        if orphans:
+            ui.label(t("other_files")).classes("text-xs text-grey mt-2")
+            for group in orphans:
+                _render_field_group(group, field_labels, user)
 
 
 async def _render_action_panel(container, user, req, step_config, wf, request_id_str):
@@ -462,14 +494,3 @@ def _show_temp_password_dialog(password: str, on_close=None):
     dlg.open()
 
 
-async def _load_files(request_id: uuid.UUID) -> dict[str, list[WorkflowFile]]:
-    """Load all files for a request, grouped by step_key."""
-    from sqlalchemy import select as sa_select
-    async with session_scope() as session:
-        result = await session.execute(
-            sa_select(WorkflowFile).where(WorkflowFile.request_id == request_id)
-        )
-        files: dict[str, list[WorkflowFile]] = {}
-        for f in result.scalars().all():
-            files.setdefault(f.step_key, []).append(f)
-        return files
