@@ -169,6 +169,50 @@ def validate_upload(content: bytes, filename: str, content_type: str, max_size_m
     return None
 
 
+async def persist_workflow_upload(
+    *,
+    request_id: uuid.UUID,
+    step_key: str,
+    field_name: str,
+    content: bytes,
+    filename: str,
+    content_type: str,
+    encrypted: bool,
+    uploaded_by: uuid.UUID | None,
+) -> WorkflowFile:
+    """Persist one uploaded file as a new WorkflowFile (a new current version).
+
+    Plain files go to UPLOAD_ROOT/<request_id>/<file_id>/<filename> — a unique
+    folder per upload — so a re-upload, or a same-named file in another field,
+    never overwrites an earlier version's blob on disk. Encrypted files already
+    get a unique blob per call via store_encrypted.
+    """
+    from not_dot_net.backend.encrypted_storage import store_encrypted
+
+    file_id = uuid.uuid4()
+    if encrypted:
+        enc_file = await store_encrypted(content, filename, content_type, uploaded_by=uploaded_by)
+        wf_file = WorkflowFile(
+            id=file_id, request_id=request_id, step_key=step_key,
+            field_name=field_name, filename=filename, storage_path="encrypted",
+            uploaded_by=uploaded_by, encrypted_file_id=enc_file.id,
+        )
+    else:
+        dest_dir = UPLOAD_ROOT / str(request_id) / str(file_id)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / filename
+        dest.write_bytes(content)
+        wf_file = WorkflowFile(
+            id=file_id, request_id=request_id, step_key=step_key,
+            field_name=field_name, filename=filename, storage_path=str(dest),
+            uploaded_by=uploaded_by,
+        )
+    async with session_scope() as session:
+        session.add(wf_file)
+        await session.commit()
+    return wf_file
+
+
 class WorkflowsConfig(BaseModel):
     token_expiry_days: int = 30
     verification_code_expiry_minutes: int = 15

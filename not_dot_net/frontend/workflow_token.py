@@ -4,18 +4,16 @@ from pathlib import Path
 
 from nicegui import ui
 
-from not_dot_net.backend.db import session_scope
-from not_dot_net.backend.encrypted_storage import store_encrypted
 from not_dot_net.backend.verification import (
     generate_verification_code,
     has_valid_code,
     is_locked_out,
     verify_code,
 )
-from not_dot_net.backend.workflow_models import WorkflowFile
 from not_dot_net.backend.field_definitions import resolve_step_fields
 from not_dot_net.backend.workflow_service import (
     get_request_by_token,
+    persist_workflow_upload,
     save_draft,
     submit_step,
     validate_upload,
@@ -128,37 +126,16 @@ def setup():
                         ui.notify(error, color="negative")
                         return
 
-                    if field_name in encrypted_fields:
-                        enc_file = await store_encrypted(
-                            content, filename, content_type, uploaded_by=None,
-                        )
-                        async with session_scope() as session:
-                            wf_file = WorkflowFile(
-                                request_id=request.id,
-                                step_key=step.key,
-                                field_name=field_name,
-                                filename=filename,
-                                storage_path="encrypted",
-                                encrypted_file_id=enc_file.id,
-                            )
-                            session.add(wf_file)
-                            await session.commit()
-                    else:
-                        from not_dot_net.backend.workflow_service import UPLOAD_ROOT
-                        upload_dir = UPLOAD_ROOT / str(request.id)
-                        upload_dir.mkdir(parents=True, exist_ok=True)
-                        dest = upload_dir / filename
-                        dest.write_bytes(content)
-                        async with session_scope() as session:
-                            wf_file = WorkflowFile(
-                                request_id=request.id,
-                                step_key=step.key,
-                                field_name=field_name,
-                                filename=filename,
-                                storage_path=str(dest),
-                            )
-                            session.add(wf_file)
-                            await session.commit()
+                    await persist_workflow_upload(
+                        request_id=request.id,
+                        step_key=step.key,
+                        field_name=field_name,
+                        content=content,
+                        filename=filename,
+                        content_type=content_type,
+                        encrypted=field_name in encrypted_fields,
+                        uploaded_by=None,
+                    )
 
                     uploaded_files[field_name] = filename
                     ui.notify(t("uploaded").format(filename=filename), color="positive")
