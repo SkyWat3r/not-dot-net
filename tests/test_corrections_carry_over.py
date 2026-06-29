@@ -1,5 +1,5 @@
 """A file already uploaded must carry over on corrections: shown as present,
-submittable without re-upload."""
+submittable without re-upload, and replaceable via the Replace button."""
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -12,7 +12,9 @@ from not_dot_net.backend.workflow_service import WorkflowsConfig, workflows_conf
 from not_dot_net.config import FieldConfig, WorkflowConfig, WorkflowStepConfig
 
 
-async def test_existing_file_carries_over_and_submits(user: User, monkeypatch):
+async def _doc_wf_with_existing_file(monkeypatch, filename="ALREADY.png"):
+    """A one-required-file workflow sitting at the token step with `filename`
+    already uploaded; verification-code gate bypassed. Returns (token, req_id)."""
     import not_dot_net.frontend.workflow_token as wt_mod
 
     await workflows_config.set(WorkflowsConfig(workflows={
@@ -37,8 +39,8 @@ async def test_existing_file_carries_over_and_submits(user: User, monkeypatch):
         await s.refresh(row)
         req_id = row.id
         s.add(WorkflowFile(request_id=req_id, step_key="docs",
-                           field_name="id_document", filename="ALREADY.png",
-                           storage_path="data/uploads/x/ALREADY.png"))
+                           field_name="id_document", filename=filename,
+                           storage_path=f"data/uploads/x/{filename}"))
         await s.commit()
 
     async def _true(*_a, **_kw):
@@ -50,6 +52,11 @@ async def test_existing_file_carries_over_and_submits(user: User, monkeypatch):
     monkeypatch.setattr(wt_mod, "is_locked_out", _false)
     monkeypatch.setattr(wt_mod, "has_valid_code", _true)
     monkeypatch.setattr(wt_mod, "verify_code", _true)
+    return tok, req_id
+
+
+async def test_existing_file_carries_over_and_submits(user: User, monkeypatch):
+    tok, req_id = await _doc_wf_with_existing_file(monkeypatch)
 
     await user.open(f"/workflow/token/{tok}")
     user.find("Verify").click()
@@ -63,3 +70,16 @@ async def test_existing_file_carries_over_and_submits(user: User, monkeypatch):
             select(WorkflowRequest).where(WorkflowRequest.id == req_id)
         )).scalar_one()
         assert req.current_step == "done"
+
+
+async def test_replace_reveals_upload_widget(user: User, monkeypatch):
+    """Clicking Replace on a carried-over file swaps the present-file display
+    for the upload widget so a new version can be picked."""
+    tok, _ = await _doc_wf_with_existing_file(monkeypatch)
+
+    await user.open(f"/workflow/token/{tok}")
+    user.find("Verify").click()
+    await user.should_see("ALREADY.png")  # carried-over file shown first
+
+    user.find("Replace").click()
+    await user.should_not_see("ALREADY.png")  # swapped to the upload widget

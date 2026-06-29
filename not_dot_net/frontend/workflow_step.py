@@ -139,35 +139,33 @@ async def _render_field(field_cfg, data, fields, files, on_file_upload, max_uplo
         fields[field_cfg.name] = select
     elif field_cfg.type == "file":
         uploaded = (files or {}).get(field_cfg.name)
-        slot = ui.column().classes(f"{width_class} gap-1")
+        # Pre-build both views and toggle visibility: clearing the container from
+        # inside the Replace click handler would destroy the clicked button.
+        with ui.column().classes(f"{width_class} gap-1"):
+            upload_view = ui.column().classes("w-full gap-1")
+            with upload_view:
+                if on_file_upload:
+                    req_mark = " *" if field_cfg.required else ""
+                    ui.upload(
+                        label=f"{label}{req_mark}",
+                        auto_upload=True,
+                        max_file_size=max_upload_size_mb * 1024 * 1024,
+                        on_upload=lambda e, name=field_cfg.name: on_file_upload(name, e),
+                    ).props("outlined flat accept='.pdf,.jpg,.jpeg,.png,.doc,.docx'").classes("w-full")
+                else:
+                    ui.label(f"{label}: no upload available").classes("text-grey text-sm")
 
-        def _show_upload(slot=slot, field_cfg=field_cfg, label=label):
-            slot.clear()
-            with slot:
-                req_mark = " *" if field_cfg.required else ""
-                ui.upload(
-                    label=f"{label}{req_mark}",
-                    auto_upload=True,
-                    max_file_size=max_upload_size_mb * 1024 * 1024,
-                    on_upload=lambda e, name=field_cfg.name: on_file_upload(name, e),
-                ).props("outlined flat accept='.pdf,.jpg,.jpeg,.png,.doc,.docx'").classes("w-full")
-
-        def _show_uploaded(fname, slot=slot, label=label):
-            slot.clear()
-            with slot:
-                with ui.row().classes("items-center gap-2"):
+            if uploaded:
+                present_view = ui.row().classes("items-center gap-2")
+                with present_view:
                     ui.icon("check_circle", color="positive", size="sm")
-                    ui.label(f"{label}: {fname}").classes("text-positive text-sm")
+                    ui.label(f"{label}: {uploaded}").classes("text-positive text-sm")
                     if on_file_upload:
-                        ui.button(t("replace"), on_click=_show_upload).props("flat dense size=sm")
-
-        if uploaded:
-            _show_uploaded(uploaded)
-        elif on_file_upload:
-            _show_upload()
-        else:
-            with slot:
-                ui.label(f"{label}: no upload available").classes("text-grey text-sm")
+                        def _reveal_upload(present_view=present_view, upload_view=upload_view):
+                            present_view.set_visibility(False)
+                            upload_view.set_visibility(True)
+                        ui.button(t("replace"), on_click=_reveal_upload).props("flat dense size=sm")
+                upload_view.set_visibility(False)
         fields[field_cfg.name] = None
     elif field_cfg.type == "location":
         nominatim_results: list[dict] = []

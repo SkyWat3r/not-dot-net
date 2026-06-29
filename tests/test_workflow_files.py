@@ -39,6 +39,18 @@ def test_group_separates_fields():
     assert by_field["bank_details"].previous == []
 
 
+def test_same_field_in_two_steps_makes_two_groups():
+    # The (step_key, field_name) compound key keeps a shared field name separate
+    # when it appears on different steps.
+    a = _wf("doc", datetime(2026, 6, 10, 1, 0), "a.png", step="step_a")
+    b = _wf("doc", datetime(2026, 6, 10, 2, 0), "b.png", step="step_b")
+    groups = group_files_by_field([a, b])
+    assert {(g.step_key, g.field_name) for g in groups} == {
+        ("step_a", "doc"), ("step_b", "doc"),
+    }
+    assert all(g.previous == [] for g in groups)
+
+
 def test_current_files_by_name_picks_newest():
     old = _wf("id_document", datetime(2026, 6, 10, 1, 0), "old.png")
     new = _wf("id_document", datetime(2026, 6, 29, 1, 0), "new.png")
