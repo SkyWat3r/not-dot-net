@@ -166,10 +166,12 @@ async def _try_ldap_auth(username: str, password: str):
 
 
 def _safe_redirect(redirect_to: str) -> str:
-    """Only allow plain local paths — reject anything that could redirect off-site."""
+    """Normalize post-login redirect targets."""
     parsed = urlparse(redirect_to)
-    if parsed.scheme or parsed.netloc:
+    if parsed.scheme and parsed.scheme not in {"http", "https"}:
         return "/"
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return redirect_to
     if not redirect_to.startswith("/") or redirect_to.startswith("//") or redirect_to.startswith("/\\"):
         return "/"
     return redirect_to
