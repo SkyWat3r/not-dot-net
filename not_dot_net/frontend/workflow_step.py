@@ -458,9 +458,8 @@ async def render_step_form(
             missing = [
                 t(f.label) if f.label else f.name for f in resolved_fields
                 if f.required
-                and f.type != "file"
                 and is_field_visible(f, collected)
-                and not collected.get(f.name)
+                and not _field_is_filled(f, collected, files or {})
             ]
             if missing:
                 ui.notify(f"{t('required_field')}: {', '.join(missing)}", color="negative")
@@ -476,16 +475,20 @@ async def render_step_form(
     return fields
 
 
+def _field_is_filled(field, data: dict, files: dict) -> bool:
+    """A file field is filled when an upload was recorded; others when data is set."""
+    if field.type == "file":
+        return bool(files.get(field.name))
+    return bool(data.get(field.name))
+
+
 def _render_completion_indicator(fields: list, data: dict, files: dict):
     """Show which required, currently-visible fields are filled (partial save)."""
     from not_dot_net.config import is_field_visible
     required = [f for f in fields if f.required and is_field_visible(f, data)]
     if not required:
         return
-    filled = sum(
-        1 for f in required
-        if (f.type == "file" and files.get(f.name)) or (f.type != "file" and data.get(f.name))
-    )
+    filled = sum(1 for f in required if _field_is_filled(f, data, files))
     ui.linear_progress(value=filled / len(required)).classes("w-full mb-2")
     ui.label(f"{filled}/{len(required)}").classes("text-sm text-grey")
 
