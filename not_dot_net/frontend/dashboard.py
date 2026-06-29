@@ -243,7 +243,7 @@ async def _render_requests_table(container, requests):
                     <div v-else-if="col.name === 'progress'" class="flex items-center gap-1" style="min-width: 80px">
                         <q-linear-progress
                             :value="props.row.progress_pct"
-                            :color="props.row.status === 'rejected' ? 'negative' : props.row.status === 'completed' ? 'positive' : 'primary'"
+                            :color="props.row.status === 'rejected' ? 'negative' : props.row.status === 'completed' ? 'positive' : props.row.status === 'cancelled' ? 'grey' : 'primary'"
                             style="width: 50px; height: 6px"
                             rounded
                         />
