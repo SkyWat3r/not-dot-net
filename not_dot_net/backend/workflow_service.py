@@ -188,6 +188,9 @@ async def persist_workflow_upload(
     never overwrites an earlier version's blob on disk. Encrypted files already
     get a unique blob per call via store_encrypted.
     """
+    # Reduce to a basename at the sink so a '..'-laden name can never escape the
+    # per-upload directory, regardless of what a caller passes.
+    filename = Path(filename).name
     file_id = uuid.uuid4()
     written_paths: list[Path] = []
     async with session_scope() as session:
@@ -531,7 +534,10 @@ async def submit_step(
                 req.code_attempts = 0
 
         await session.commit()
-        await session.refresh(req)
+        # No post-commit session.refresh(req): the transition is already durable and
+        # every attribute read below was loaded before commit (expire_on_commit=False).
+        # A refresh here could raise after commit and, via the caller's discard-on-error
+        # cleanup, delete a legitimately-submitted request together with its files.
 
         # Mark encrypted files for retention on workflow completion (requires Task 8 column)
         if new_status == RequestStatus.COMPLETED:

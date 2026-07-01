@@ -24,7 +24,10 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-database_url = os.environ.get(
+# Honor a URL set programmatically (migrate.py) before falling back to the
+# environment; alembic.ini leaves sqlalchemy.url blank so this stays a real
+# choice rather than a hardcoded placeholder.
+database_url = config.get_main_option("sqlalchemy.url") or os.environ.get(
     "DATABASE_URL", "sqlite+aiosqlite:///./dev.db"
 )
 config.set_main_option("sqlalchemy.url", database_url)

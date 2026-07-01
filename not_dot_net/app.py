@@ -6,7 +6,7 @@ from pathlib import Path
 from nicegui import app, ui
 
 from not_dot_net.backend.db import init_db, create_db_and_tables
-from not_dot_net.backend.migrate import run_upgrade
+from not_dot_net.backend.migrate import bootstrap_schema
 from not_dot_net.backend.secrets import load_or_create
 from not_dot_net.backend.users import init_user_secrets, ensure_default_admin, set_dev_mode
 import not_dot_net.backend.auth.ldap  # noqa: F401 — register LdapConfig section
@@ -100,7 +100,8 @@ def create_app(
 
     if not dev_mode:
         logger.info("Running migrations...")
-        run_upgrade(database_url)
+        # Runs before the event loop starts, so asyncio.run is safe here.
+        asyncio.run(bootstrap_schema(database_url))
         logger.info("Migrations complete")
         _lock_socketio_cors()
 

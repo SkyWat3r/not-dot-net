@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 
 import aiosmtplib
-from sqlalchemy import Index, String, Text, delete, func, select
+from sqlalchemy import Index, String, Text, and_, delete, func, or_, select
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
 from not_dot_net.backend.db import Base, session_scope
@@ -162,17 +162,19 @@ async def _drain_outbox_once() -> int:
 
 
 async def purge_sent_rows(retention: timedelta = SENT_RETENTION) -> int:
-    """Delete delivered rows older than `retention`.
+    """Delete delivered or permanently-failed rows older than `retention`.
 
-    Sent bodies can contain sensitive content (token links, codes); there
-    is no reason to keep them once delivered. Returns rows deleted.
+    Both sent and failed bodies can contain sensitive content (token links,
+    codes); there is no reason to keep either once terminal. Returns rows deleted.
     """
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - retention
     async with session_scope() as session:
         result = await session.execute(
             delete(MailOutbox).where(
-                MailOutbox.sent_at.is_not(None),
-                MailOutbox.sent_at < cutoff,
+                or_(
+                    and_(MailOutbox.sent_at.is_not(None), MailOutbox.sent_at < cutoff),
+                    and_(MailOutbox.failed_at.is_not(None), MailOutbox.failed_at < cutoff),
+                )
             )
         )
         await session.commit()

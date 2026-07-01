@@ -441,3 +441,33 @@ async def test_purge_sent_rows_deletes_only_old_delivered_mail():
     async with session_scope() as session:
         remaining = (await session.execute(select(MailOutbox.to_address))).scalars().all()
     assert sorted(remaining) == ["pending@test", "recent@test"]
+
+
+async def test_purge_also_deletes_old_failed_rows():
+    """Rows that exhausted retries still hold token-link bodies — they must be
+    purged on the same retention clock as delivered rows, not kept forever."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from not_dot_net.backend.db import session_scope
+    from not_dot_net.backend.mail_outbox import MailOutbox, purge_sent_rows
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with session_scope() as session:
+        session.add(MailOutbox(to_address="oldfail@test", subject="oldfail",
+                               body_html="<a>token</a>", attempts=7,
+                               next_attempt_at=now - timedelta(days=31),
+                               failed_at=now - timedelta(days=31)))
+        session.add(MailOutbox(to_address="recentfail@test", subject="recentfail",
+                               body_html="<a>token</a>", attempts=7,
+                               next_attempt_at=now - timedelta(days=1),
+                               failed_at=now - timedelta(days=1)))
+        await session.commit()
+
+    deleted = await purge_sent_rows()
+
+    assert deleted == 1
+    async with session_scope() as session:
+        remaining = (await session.execute(select(MailOutbox.to_address))).scalars().all()
+    assert remaining == ["recentfail@test"]

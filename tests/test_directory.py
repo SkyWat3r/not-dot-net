@@ -33,6 +33,33 @@ async def test_directory_shows_search(user: User) -> None:
 from not_dot_net.frontend.directory import classify_updates
 
 
+async def test_update_user_cannot_set_is_superuser():
+    """_update_user must never let a privileged field like is_superuser through.
+
+    The directory edit form only submits profile-field keys today, but the update
+    path went through UserManager.update with safe=False, so a stray is_superuser
+    key would escalate. Harden the sink itself.
+    """
+    import uuid
+    from not_dot_net.backend.db import User, session_scope
+    from not_dot_net.frontend.directory import _update_user
+
+    uid = uuid.uuid4()
+    async with session_scope() as session:
+        session.add(User(
+            id=uid, email="victim@test.com", hashed_password="x",
+            is_active=True, is_superuser=False, is_verified=True,
+        ))
+        await session.commit()
+
+    await _update_user(uid, {"is_superuser": True, "title": "Engineer"})
+
+    async with session_scope() as session:
+        reloaded = await session.get(User, uid)
+        assert reloaded.is_superuser is False
+        assert reloaded.title == "Engineer"
+
+
 async def test_load_people_returns_only_active_users():
     from not_dot_net.backend.db import User
     from not_dot_net.frontend.directory import _load_people

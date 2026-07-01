@@ -82,7 +82,10 @@ async def _update_user(user_id, updates: dict, actor_email: str | None = None):
             async with asynccontextmanager(get_user_manager)(user_db) as manager:
                 user = await manager.get(user_id)
                 update_schema = UserUpdate(**updates)
-                await manager.update(update_schema, user, actor_email=actor_email)
+                # safe=True: FastAPI-Users strips is_superuser/is_active/is_verified
+                # from self-service updates. The edit form never sets them; this
+                # guards against a stray privileged key ever reaching the sink.
+                await manager.update(update_schema, user, safe=True, actor_email=actor_email)
 
 
 async def _delete_user(user_id, actor=None):

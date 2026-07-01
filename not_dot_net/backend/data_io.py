@@ -22,6 +22,28 @@ def _clean_text(value) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _as_int(value, default: int) -> int:
+    """Coerce a JSON scalar to int; fall back to `default` on garbage.
+
+    Untyped import JSON may carry a string where an int column is expected; on
+    PostgreSQL that aborts the whole batch INSERT. Coerce defensively instead.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_bool(value, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y", "on"}
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
 def _serialize_page(p: Page) -> dict:
     return {
         "title": p.title,
@@ -113,8 +135,8 @@ async def import_pages(data: list[dict], *, replace: bool = False) -> dict[str, 
                 if replace:
                     existing.title = item.get("title", existing.title)
                     existing.content = item.get("content", existing.content)
-                    existing.sort_order = item.get("sort_order", existing.sort_order)
-                    existing.published = item.get("published", existing.published)
+                    existing.sort_order = _as_int(item.get("sort_order", existing.sort_order), existing.sort_order)
+                    existing.published = _as_bool(item.get("published", existing.published), existing.published)
                     updated += 1
                 else:
                     skipped += 1
@@ -123,8 +145,8 @@ async def import_pages(data: list[dict], *, replace: bool = False) -> dict[str, 
                     title=item["title"],
                     slug=slug,
                     content=item.get("content", ""),
-                    sort_order=item.get("sort_order", 0),
-                    published=item.get("published", False),
+                    sort_order=_as_int(item.get("sort_order", 0), 0),
+                    published=_as_bool(item.get("published", False), False),
                 ))
                 created += 1
         await session.commit()
@@ -149,7 +171,7 @@ async def import_resources(data: list[dict], *, replace: bool = False) -> dict[s
                     existing.description = item.get("description", existing.description)
                     existing.location = item.get("location", existing.location)
                     existing.specs = item.get("specs", existing.specs)
-                    existing.active = item.get("active", existing.active)
+                    existing.active = _as_bool(item.get("active", existing.active), existing.active)
                     updated += 1
                 else:
                     skipped += 1
@@ -160,7 +182,7 @@ async def import_resources(data: list[dict], *, replace: bool = False) -> dict[s
                     description=item.get("description"),
                     location=item.get("location"),
                     specs=item.get("specs"),
-                    active=item.get("active", True),
+                    active=_as_bool(item.get("active", True), True),
                 ))
                 created += 1
         await session.commit()

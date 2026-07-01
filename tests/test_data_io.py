@@ -315,3 +315,28 @@ async def test_import_all_empty_tenures_result_has_updated_key():
     result = await import_all({"tenures": []})
 
     assert result["tenures"] == {"created": 0, "updated": 0, "skipped": 0}
+
+
+async def test_import_pages_coerces_malformed_scalar_fields():
+    """A malformed sort_order/published value must be coerced to a safe default
+    rather than stored raw — on PostgreSQL a string in an int column aborts the
+    whole import (SQLite silently accepts it, hiding the bug)."""
+    from not_dot_net.backend.data_io import import_pages
+    from not_dot_net.backend.page_models import Page
+
+    data = [
+        {"slug": "p1", "title": "One", "sort_order": "not-a-number", "published": "yes"},
+        {"slug": "p2", "title": "Two", "sort_order": "3", "published": True},
+    ]
+    result = await import_pages(data)
+
+    assert result["created"] == 2
+    async with session_scope() as session:
+        rows = {
+            p.slug: p for p in
+            (await session.execute(select(Page))).scalars().all()
+        }
+    # Uncoercible sort_order falls back to 0; a numeric string coerces to int.
+    assert rows["p1"].sort_order == 0
+    assert isinstance(rows["p1"].published, bool)
+    assert rows["p2"].sort_order == 3

@@ -31,9 +31,14 @@ def migrate(
     revision: str = "head",
 ):
     """Run database migrations to the given revision."""
-    from not_dot_net.backend.migrate import run_upgrade
     database_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
-    run_upgrade(database_url, revision)
+    if revision == "head":
+        import asyncio
+        from not_dot_net.backend.migrate import bootstrap_schema
+        asyncio.run(bootstrap_schema(database_url))
+    else:
+        from not_dot_net.backend.migrate import run_upgrade
+        run_upgrade(database_url, revision)
     print(f"Migrated to {revision}.")
 
 

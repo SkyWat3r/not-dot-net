@@ -327,3 +327,34 @@ async def test_submit_post_commit_audit_failure_keeps_submitted_request(monkeypa
         stored = await session.get(WorkflowRequest, req.id)
     assert stored is not None
     assert stored.current_step == "approval"
+
+
+async def test_persist_workflow_upload_contains_traversal_filename(tmp_path, monkeypatch):
+    """A filename with '..' must be reduced to its basename so the blob stays
+    inside the unique per-upload directory and can't escape it."""
+    monkeypatch.setattr(workflow_service, "UPLOAD_ROOT", tmp_path)
+
+    user = User(id=uuid.uuid4(), email="trav@test.com", hashed_password="x",
+                is_superuser=True)
+    async with session_scope() as session:
+        session.add(user)
+        await session.commit()
+
+    req = await workflow_service.create_request(
+        workflow_type="vpn_access", created_by=user.id,
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=user,
+    )
+
+    wf_file = await workflow_service.persist_workflow_upload(
+        request_id=req.id, step_key="request", field_name="doc",
+        content=b"payload", filename="../escape.txt",
+        content_type="text/plain", encrypted=False, uploaded_by=user.id,
+    )
+
+    stored = Path(wf_file.storage_path).resolve()
+    req_dir = (tmp_path / str(req.id)).resolve()
+    # Layout must be <req_dir>/<file_id>/<basename> — the '..' must not lift it
+    # out of the per-upload file_id directory.
+    assert stored.name == "escape.txt"
+    assert stored.parent.parent == req_dir
+    assert stored.read_bytes() == b"payload"

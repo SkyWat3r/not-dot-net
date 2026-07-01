@@ -79,6 +79,39 @@ async def test_submit_step_advances():
     assert updated.status == "in_progress"
 
 
+async def test_submit_step_survives_post_commit_session_error(monkeypatch):
+    """A post-commit session failure must not abort a durably-committed transition.
+
+    submit_step commits the step transition, then previously ran an unguarded
+    session.refresh(req). Its caller (_create_and_submit_request) discards the
+    request on ANY exception — so a post-commit error would delete a legitimately
+    submitted request plus its files/blobs. The transition is already durable;
+    a late session hiccup must not turn into a lost request.
+    """
+    await _setup_roles()
+    user = await _create_user()
+    req = await create_request(
+        workflow_type="vpn_access",
+        created_by=user.id,
+        data={"target_name": "Alice", "target_email": "alice@test.com"},
+    )
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    async def boom(self, *a, **k):
+        raise RuntimeError("connection dropped after commit")
+
+    monkeypatch.setattr(AsyncSession, "refresh", boom)
+
+    updated = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
+    assert updated.current_step == "approval"
+
+    monkeypatch.undo()
+    reloaded = await get_request_by_id(req.id)
+    assert reloaded.current_step == "approval"
+    assert reloaded.status == "in_progress"
+
+
 async def test_approve_completes_workflow():
     await _setup_roles()
     staff = await _create_user(email="staff@test.com", role="staff")
