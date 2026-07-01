@@ -170,3 +170,59 @@ async def test_ad_account_creation_ad_create_failure_keeps_uid(monkeypatch):
     async with session_scope() as session:
         rows = (await session.execute(select(UidAllocation))).scalars().all()
     assert any(r.sam_account == "as4" for r in rows), "UID row missing — no-reuse invariant violated"
+
+
+@pytest.mark.asyncio
+async def test_ad_account_creation_idempotent_retry_resets_password(monkeypatch):
+    """A retry after a partial failure — the AD account already exists AND is
+    linked to this request's target — must reprovision idempotently: reset the
+    (unrecoverable) password, reuse the existing DN/UID, and NOT allocate a new
+    UID or try to re-create the account."""
+    from not_dot_net.backend.workflow_service import _handle_ad_account_creation
+    from not_dot_net.backend.ad_account_config import ad_account_config
+    from not_dot_net.backend.db import session_scope, User, AuthMethod
+    from not_dot_net.backend.uid_allocator import UidAllocation
+    from sqlalchemy import select
+    import not_dot_net.backend.workflow_service as ws
+
+    cfg = await ad_account_config.get()
+    await ad_account_config.set(cfg.model_copy(update={
+        "users_ous": ["OU=Users,DC=x,DC=y"], "eligible_groups": [],
+    }))
+
+    existing_dn = "CN=Alice Smith,OU=Users,DC=x,DC=y"
+    reset_calls = []
+
+    monkeypatch.setattr(ws, "ldap_user_exists_by_sam", lambda *a, **kw: True, raising=False)
+
+    def _boom_create(*a, **kw):
+        raise AssertionError("must not re-create the account when reprovisioning")
+    monkeypatch.setattr(ws, "ldap_create_user", _boom_create, raising=False)
+
+    def _reset(dn, pw, *a, **kw):
+        reset_calls.append((dn, pw))
+    monkeypatch.setattr(ws, "ldap_reset_password", _reset, raising=False)
+
+    async with session_scope() as session:
+        target = User(email="retry@example.com", full_name="Alice Smith",
+                      hashed_password="x", auth_method=AuthMethod.LDAP, role="",
+                      is_active=True, ldap_username="smith", ldap_dn=existing_dn,
+                      uid_number=10000, gid_number=5000)
+        session.add(target)
+        await session.commit()
+
+    request = MagicMock(target_email="retry@example.com", id="req-retry", type="onboarding")
+    form = {"first_name": "Alice", "last_name": "Smith", "sam_account": "smith",
+            "ou_dn": "OU=Users,DC=x,DC=y", "mail": "alice.smith@x.y",
+            "home_directory": "/home/smith"}
+
+    result = await _handle_ad_account_creation(request, form, ("admin", "pw"), MagicMock(id="a"))
+
+    assert result.new_dn == existing_dn
+    assert result.uid == 10000
+    assert result.initial_password
+    assert reset_calls == [(existing_dn, result.initial_password)]
+
+    async with session_scope() as session:
+        rows = (await session.execute(select(UidAllocation))).scalars().all()
+    assert rows == [], "no new UID must be allocated on an idempotent retry"

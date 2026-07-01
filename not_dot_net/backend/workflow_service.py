@@ -68,6 +68,7 @@ from not_dot_net.backend.auth.ldap import (  # noqa: F401
     ldap_config as _ldap_cfg_section,
     ldap_user_exists_by_sam,
     ldap_create_user,
+    ldap_reset_password,
     ldap_add_to_groups,
     NewAdUser,
     LdapModifyError,
@@ -1033,6 +1034,7 @@ async def _handle_ad_account_creation(
     # Use module-level names so tests can monkeypatch them.
     _ldap_user_exists = _ws.ldap_user_exists_by_sam
     _ldap_create = _ws.ldap_create_user
+    _ldap_reset = _ws.ldap_reset_password
     _ldap_add_groups = _ws.ldap_add_to_groups
     _NewAdUser = _ws.NewAdUser
     _LdapModifyError = _ws.LdapModifyError
@@ -1045,11 +1047,6 @@ async def _handle_ad_account_creation(
     sam = form_data["sam_account"].strip()
     if not sam or not USERNAME_RE.fullmatch(sam):
         raise ValueError(f"Invalid sAMAccountName: {sam!r} — must match [a-zA-Z0-9._-]{{1,64}}")
-    # ldap3 is synchronous — run AD round-trips off the event loop so a slow
-    # DC doesn't freeze every connected client.
-    import asyncio
-    if await asyncio.to_thread(_ldap_user_exists, sam, bind_user, bind_pw, ldap_cfg, _connect):
-        raise ValueError(f"sAMAccountName already exists in AD: {sam}")
 
     ou_dn = form_data["ou_dn"]
     if ou_dn not in ad_cfg.users_ous:
@@ -1067,38 +1064,84 @@ async def _handle_ad_account_creation(
     if not target:
         raise ValueError(f"No local User for target_email={request.target_email!r}")
 
-    uid = await allocate_uid(target.id, sam)
+    # ldap3 is synchronous — run AD round-trips off the event loop so a slow
+    # DC doesn't freeze every connected client.
+    import asyncio
+    sam_exists = await asyncio.to_thread(_ldap_user_exists, sam, bind_user, bind_pw, ldap_cfg, _connect)
+    # A retry after a partial failure (AD account created, but the workflow step
+    # never committed) leaves the account existing AND already linked to this
+    # target. Reprovision idempotently instead of dead-ending on "already
+    # exists" — the one-time password is unrecoverable, so reset it afresh.
+    reprovision = (
+        sam_exists
+        and (target.ldap_username or "").lower() == sam.lower()
+        and bool(target.ldap_dn)
+    )
+    if sam_exists and not reprovision:
+        raise ValueError(f"sAMAccountName already exists in AD: {sam}")
 
     first = form_data["first_name"]
     last = form_data["last_name"]
     display_name = form_data.get("display_name") or f"{first} {last}"
+    mail = form_data["mail"]
+    gid_number = int(form_data.get("gid_number") or ad_cfg.default_gid_number)
+    description = form_data.get("description")
     initial_password = generate_initial_password(ad_cfg.password_length)
 
-    new_user = _NewAdUser(
-        sam_account=sam,
-        given_name=first,
-        surname=last,
-        display_name=display_name,
-        mail=form_data["mail"],
-        description=form_data.get("description"),
-        ou_dn=ou_dn,
-        uid_number=uid,
-        gid_number=int(form_data.get("gid_number") or ad_cfg.default_gid_number),
-        login_shell=form_data.get("login_shell") or ad_cfg.default_login_shell,
-        home_directory=form_data["home_directory"],
-        initial_password=initial_password,
-        must_change_password=True,
-    )
-    try:
-        new_dn = await asyncio.to_thread(_ldap_create, new_user, bind_user, bind_pw, ldap_cfg, _connect)
-    except _LdapModifyError as e:
+    if reprovision:
+        uid = target.uid_number
+        new_dn = target.ldap_dn
+        try:
+            await asyncio.to_thread(
+                _ldap_reset, new_dn, initial_password, bind_user, bind_pw, ldap_cfg, _connect,
+            )
+        except _LdapModifyError as e:
+            await log_audit(
+                category="ad", action="reset_password",
+                actor_id=str(actor_user.id) if actor_user else None,
+                target_id=str(target.id),
+                detail=f"sam={sam} dn={new_dn} error={e} succeeded=False",
+            )
+            raise
+        await log_audit(
+            category="ad", action="reset_password",
+            actor_id=str(actor_user.id) if actor_user else None,
+            target_id=str(target.id),
+            detail=f"sam={sam} uid={uid} dn={new_dn} idempotent_retry succeeded=True",
+        )
+    else:
+        uid = await allocate_uid(target.id, sam)
+        new_user = _NewAdUser(
+            sam_account=sam,
+            given_name=first,
+            surname=last,
+            display_name=display_name,
+            mail=mail,
+            description=description,
+            ou_dn=ou_dn,
+            uid_number=uid,
+            gid_number=gid_number,
+            login_shell=form_data.get("login_shell") or ad_cfg.default_login_shell,
+            home_directory=form_data["home_directory"],
+            initial_password=initial_password,
+            must_change_password=True,
+        )
+        try:
+            new_dn = await asyncio.to_thread(_ldap_create, new_user, bind_user, bind_pw, ldap_cfg, _connect)
+        except _LdapModifyError as e:
+            await log_audit(
+                category="ad", action="create_user",
+                actor_id=str(actor_user.id) if actor_user else None,
+                target_id=str(target.id),
+                detail=f"sam={sam} uid={uid} error={e} succeeded=False",
+            )
+            raise
         await log_audit(
             category="ad", action="create_user",
             actor_id=str(actor_user.id) if actor_user else None,
             target_id=str(target.id),
-            detail=f"sam={sam} uid={uid} error={e} succeeded=False",
+            detail=f"sam={sam} uid={uid} dn={new_dn} ou={ou_dn} succeeded=True",
         )
-        raise
 
     async with session_scope() as session:
         u = await session.get(User, target.id)
@@ -1106,17 +1149,10 @@ async def _handle_ad_account_creation(
             u.ldap_dn = new_dn
             u.ldap_username = sam
             u.uid_number = uid
-            u.gid_number = new_user.gid_number
-            u.description = new_user.description
+            u.gid_number = gid_number
+            u.description = description
             u.is_active = True
             await session.commit()
-
-    await log_audit(
-        category="ad", action="create_user",
-        actor_id=str(actor_user.id) if actor_user else None,
-        target_id=str(target.id),
-        detail=f"sam={sam} uid={uid} dn={new_dn} ou={ou_dn} succeeded=True",
-    )
 
     group_failures: dict[str, str] = {}
     if chosen_groups:
@@ -1149,7 +1185,7 @@ async def _handle_ad_account_creation(
             "workflow_label": workflow_label,
             "sam": sam,
             "display_name": display_name,
-            "mail": new_user.mail,
+            "mail": mail,
         }
         subject, body = await render_email("account_created", ctx)
         await send_mail(contact_email, subject, body)

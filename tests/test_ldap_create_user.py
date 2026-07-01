@@ -218,3 +218,39 @@ def test_ldap_list_groups_returns_summaries():
     assert len(groups) == 2
     dns = {g.dn for g in groups}
     assert dns == {"CN=g1,OU=Groups,DC=x", "CN=g2,OU=Groups,DC=x"}
+
+
+def test_ldap_reset_password_happy_path():
+    from not_dot_net.backend.auth.ldap import ldap_reset_password, LdapConfig
+    conn = _FakeConn()
+    cfg = LdapConfig(base_dn="DC=x,DC=y")
+
+    ldap_reset_password("CN=alice,DC=x,DC=y", "Fresh!Pass987", "admin", "pw",
+                        cfg, _fake_connect_returning(conn))
+
+    ops = [c[0] for c in conn.calls]
+    assert ops == ["modify", "modify"]  # unicodePwd, then pwdLastSet=0
+    _, (_, pwd_changes) = conn.calls[0]
+    assert pwd_changes["unicodePwd"][0][1][0] == ('"Fresh!Pass987"').encode("utf-16-le")
+    _, (_, pls_changes) = conn.calls[1]
+    assert pls_changes["pwdLastSet"][0][1] == ["0"]
+    assert conn.bound is False  # unbound in finally
+
+
+def test_ldap_reset_password_no_force_change_skips_pwdlastset():
+    from not_dot_net.backend.auth.ldap import ldap_reset_password, LdapConfig
+    conn = _FakeConn()
+    cfg = LdapConfig(base_dn="DC=x,DC=y")
+    ldap_reset_password("CN=alice,DC=x", "Fresh!Pass987", "a", "p", cfg,
+                        _fake_connect_returning(conn), must_change_password=False)
+    assert [c[0] for c in conn.calls] == ["modify"]
+
+
+def test_ldap_reset_password_failure_raises():
+    from not_dot_net.backend.auth.ldap import ldap_reset_password, LdapConfig, LdapModifyError
+    conn = _FakeConn(modify_ok=False)
+    cfg = LdapConfig(base_dn="DC=x,DC=y")
+    with pytest.raises(LdapModifyError):
+        ldap_reset_password("CN=alice,DC=x", "Fresh!Pass987", "a", "p", cfg,
+                            _fake_connect_returning(conn))
+    assert [c[0] for c in conn.calls] == ["modify"]

@@ -813,6 +813,38 @@ def ldap_create_user(
     return dn
 
 
+def ldap_reset_password(
+    dn: str,
+    new_password: str,
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    connect: Callable[..., Connection] = default_ldap_connect,
+    must_change_password: bool = True,
+) -> None:
+    """Reset an existing AD account's password (unicodePwd MODIFY_REPLACE).
+
+    Used to recover an account created on a prior, partially-failed run so the
+    workflow can complete idempotently with a fresh temporary password (the
+    original one-time password is unrecoverable). Raises LdapModifyError on failure.
+    """
+    conn = _ldap_bind(bind_username, bind_password, ldap_cfg, connect)
+    try:
+        ok = conn.modify(dn, {"unicodePwd": [(MODIFY_REPLACE, [_ad_encode_password(new_password)])]})
+        if not ok:
+            raise LdapModifyError(
+                f"reset password failed: {conn.result.get('description')} ({conn.result.get('message')})"
+            )
+        if must_change_password:
+            ok = conn.modify(dn, {"pwdLastSet": [(MODIFY_REPLACE, ["0"])]})
+            if not ok:
+                raise LdapModifyError(
+                    f"pwdLastSet failed: {conn.result.get('description')} ({conn.result.get('message')})"
+                )
+    finally:
+        conn.unbind()
+
+
 def _modify_group_member(
     op_kind,  # MODIFY_ADD or MODIFY_DELETE
     user_dn: str,
